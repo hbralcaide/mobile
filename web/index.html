@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapalengke Admin Registration</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="form-container">
+            <div class="header">
+                <h1>Mapalengke</h1>
+                <h2>Complete Admin Registration</h2>
+                <p>Please set up your admin account to continue</p>
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Validating invitation...</p>
+            </div>
+
+            <div id="error" class="error hidden">
+                <p id="error-message"></p>
+                <button onclick="window.close()" class="btn btn-secondary">Close</button>
+            </div>
+
+            <form id="signup-form" class="form hidden">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required minlength="8">
+                    <small>Minimum 8 characters</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm-password">Confirm Password</label>
+                    <input type="password" id="confirm-password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="submit-btn">
+                    <span id="submit-text">Complete Registration</span>
+                    <div id="submit-spinner" class="spinner-small hidden"></div>
+                </button>
+            </form>
+
+            <div id="success" class="success hidden">
+                <div class="success-icon">✓</div>
+                <h3>Registration Successful!</h3>
+                <p>Your admin account has been created successfully. Please check your email to verify your account before logging in to the mobile app.</p>
+                <button onclick="window.close()" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="script.js"></script>
+</body>
+</html>

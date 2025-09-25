@@ -1,0 +1,13 @@
+{
+  "name": "mapalengke-admin-web",
+  "version": "1.0.0",
+  "description": "Web-based admin registration for Mapalengke",
+  "main": "index.html",
+  "scripts": {
+    "start": "http-server . -p 8000 -c-1",
+    "dev": "http-server . -p 8000 -c-1 -o"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
