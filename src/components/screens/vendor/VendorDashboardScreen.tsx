@@ -22,10 +22,13 @@ interface VendorProfile {
 
 interface Product {
   id: string;
-  name: string;
-  base_price: number;
+  price: number;
   uom: string;
   status: string;
+  products: {
+    name: string;
+    description?: string;
+  };
 }
 
 const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
@@ -90,15 +93,22 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
         // Fetch products for this specific vendor
         const { data: productData, error: productError } = await supabase
-          .from('products')
-          .select('*')
-          .eq('vendor_profile_id', vendorData.id)
-          .order('name', { ascending: true });
+          .from('vendor_products')
+          .select(`
+            *,
+            products (
+              name,
+              description
+            )
+          `)
+          .eq('vendor_id', vendorData.id)
+          .order('created_at', { ascending: false });
 
         if (productError) {
           setError('Failed to load products');
           setProducts([]);
         } else {
+          console.log('Product data with status values:', productData);
           setProducts(productData || []);
         }
       } catch (err) {
@@ -113,8 +123,8 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   // Stats
   const totalProducts = products.length;
-  const activeProducts = products.filter(p => p.status === 'Active').length;
-  const inactiveProducts = products.filter(p => p.status !== 'Active').length;
+  const availableProducts = products.filter(p => p.status === 'available' || p.status === 'active').length;
+  const unavailableProducts = products.filter(p => p.status === 'unavailable' || p.status === 'inactive').length;
 
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#22C55E" /></View>;
@@ -138,8 +148,8 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       {/* Stats Cards */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}><Text style={styles.statNum}>{totalProducts}</Text><Text style={styles.statLabel}>Total Products</Text></View>
-        <View style={styles.statCard}><Text style={styles.statNum}>{activeProducts}</Text><Text style={styles.statLabel}>Active Products</Text></View>
-        <View style={styles.statCard}><Text style={styles.statNum}>{inactiveProducts}</Text><Text style={styles.statLabel}>Inactive Products</Text></View>
+        <View style={styles.statCard}><Text style={styles.statNum}>{availableProducts}</Text><Text style={styles.statLabel}>Available Products</Text></View>
+        <View style={styles.statCard}><Text style={styles.statNum}>{unavailableProducts}</Text><Text style={styles.statLabel}>Unavailable Products</Text></View>
       </View>
 
       {/* Shop Profile Card (no Manage Products button) */}
@@ -173,11 +183,11 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.noProductsText}>No products found.</Text>
         ) : (
           products.map(product => (
-            <View key={product.id} style={styles.productRow}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.productPrice}>{product.base_price}/{product.uom || 'kg'}</Text>
-              <View style={[styles.statusBadge, product.status === 'Active' ? styles.statusActive : styles.statusInactive]}>
-                <Text style={styles.statusBadgeText}>{product.status === 'Active' ? 'Active' : 'Inactive'}</Text>
+            <View key={product.id} style={[styles.productRow, (product.status === 'unavailable' || product.status === 'inactive') && styles.productRowUnavailable]}>
+              <Text style={styles.productName}>{product.products.name}</Text>
+              <Text style={styles.productPrice}>₱{product.price}/{product.uom || 'kg'}</Text>
+              <View style={[styles.statusBadge, (product.status === 'available' || product.status === 'active') ? styles.statusActive : styles.statusInactive]}>
+                <Text style={styles.statusBadgeText}>{(product.status === 'available' || product.status === 'active') ? 'Available' : 'Unavailable'}</Text>
               </View>
             </View>
           ))
@@ -324,6 +334,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     paddingHorizontal: 8,
+  },
+  productRowUnavailable: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.7,
   },
   productName: {
     fontSize: 16,

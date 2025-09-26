@@ -23,7 +23,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editProduct, setEditProduct] = useState<any | null>(null);
-  const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Active' });
+  const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
   const [productInput, setProductInput] = useState('');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [categoryInput, setCategoryInput] = useState('');
@@ -198,7 +198,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       price: '', 
       category_id: '', 
       uom: '', 
-      status: 'Active' 
+      status: 'Available' 
     });
     setCategoryInput(
       currentVendorProfile?.market_sections?.name || 
@@ -219,7 +219,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       price: String(vendorProduct.price || ''),
       category_id: '',
       uom: vendorProduct.uom || '',
-      status: vendorProduct.status === 'active' ? 'Active' : 'Inactive'
+      status: vendorProduct.status === 'available' ? 'Available' : 'Unavailable'
     });
     setCategoryInput(
       currentVendorProfile?.market_sections?.name || 
@@ -322,7 +322,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         vendor_id: vendorProfile.id,
         price: Number(form.price),
         uom: form.uom,
-        status: form.status === 'Active' ? 'active' : 'inactive',
+        status: form.status === 'Available' ? 'available' : 'unavailable',
         visibility: true
       };
       
@@ -351,7 +351,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         Alert.alert('Success', `Product ${editProduct ? 'updated' : 'created'} successfully!`);
         setModalVisible(false);
         setCategoryInput('');
-        setForm({ name: '', price: '', category_id: '', uom: '', status: 'Active' });
+        setForm({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
         // Refresh the product list
         await fetchProducts();
       }
@@ -380,11 +380,11 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         data={products}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={styles.productRow}>
+          <View style={[styles.productRow, item.status === 'unavailable' && styles.productRowUnavailable]}>
             <Text style={styles.productName}>{item.products?.name}</Text>
             <Text style={styles.productPrice}>{item.price}/{item.uom || 'piece'}</Text>
-            <Text style={[styles.statusBadge, item.status === 'active' ? styles.statusActive : styles.statusInactive]}>
-              {item.status === 'active' ? 'Active' : 'Inactive'}
+            <Text style={[styles.statusBadge, item.status === 'available' ? styles.statusActive : styles.statusInactive]}>
+              {item.status === 'available' ? 'Available' : 'Unavailable'}
             </Text>
             <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
               <Text style={styles.iconText}>✏️</Text>
@@ -512,9 +512,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
               </View></View>
             <View style={styles.fieldRowVertical}><Text style={styles.fieldLabelVertical}>Availability:</Text>
               <View style={styles.dropdownBoxCustom}>
-                {['Active', 'Inactive'].map(status => (
+                {['Available', 'Unavailable'].map(status => (
                   <TouchableOpacity key={status} style={[styles.dropdownOptionCustom, form.status === status && styles.dropdownSelectedCustom]} onPress={() => setForm(f => ({ ...f, status }))}>
-                    <Text style={form.status === status ? styles.dropdownSelectedTextCustom : styles.dropdownTextCustom}>{status === 'Active' ? 'Available' : 'Unavailable'}</Text>
+                    <Text style={form.status === status ? styles.dropdownSelectedTextCustom : styles.dropdownTextCustom}>{status}</Text>
                   </TouchableOpacity>
                 ))}
               </View></View>
@@ -860,6 +860,10 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     elevation: 1,
+  },
+  productRowUnavailable: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.7,
   },
   errorText: {
     color: 'red',

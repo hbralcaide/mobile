@@ -13,6 +13,8 @@ import CategoryListScreen from './src/components/screens/public/CategoryListScre
 import ProductListScreen from './src/components/screens/public/ProductListScreen';
 import ProductDetailsScreen from './src/components/screens/public/ProductDetailsScreen';
 import MarketMapScreen from './src/components/screens/public/MarketMapScreen';
+import VendorsByCategoryScreen from './src/components/screens/public/VendorsByCategoryScreen';
+import VendorDetailsScreen from './src/components/screens/public/VendorDetailsScreen';
 
 import LoginScreen from './src/components/screens/auth/LoginScreen';
 import RegisterScreen from './src/components/screens/auth/RegisterScreen';
@@ -36,6 +38,16 @@ function App(): React.ReactElement {
           <Stack.Screen name="ProductList" component={ProductListScreen} />
           <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
           <Stack.Screen name="MarketMap" component={MarketMapScreen} />
+          <Stack.Screen 
+            name="VendorsByCategory" 
+            component={VendorsByCategoryScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="VendorDetails" 
+            component={VendorDetailsScreen}
+            options={{ headerShown: false }}
+          />
 
           {/* Auth Routes */}
           <Stack.Screen name="Login" component={LoginScreen} />

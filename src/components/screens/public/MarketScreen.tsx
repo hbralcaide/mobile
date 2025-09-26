@@ -10,13 +10,17 @@ import {
   Animated,
   ScrollView,
 } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../../navigation/types';
 import IndoorMarketMap from './MarketMapScreen';
 
-interface CustomerHomeProps {
+type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
+
+interface CustomerHomeProps extends Props {
   onLogout?: () => void;
 }
 
-const CustomerHome: React.FC<CustomerHomeProps> = ({ onLogout }) => {
+const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => {
   const translateY = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -34,6 +38,10 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ onLogout }) => {
     }).start(() => {
       setIsExpanded(!isExpanded);
     });
+  };
+
+  const handleCategoryPress = (category: string) => {
+    navigation.navigate('VendorsByCategory', { category });
   };
 
 
@@ -94,19 +102,19 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ onLogout }) => {
           contentContainerStyle={styles.categoryButtonsContainer}
           style={styles.categoryButtons}
         >
-          <TouchableOpacity style={styles.categoryButton}>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Fish')}>
             <Text style={styles.categoryButtonText}>Fish</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton}>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Pork')}>
             <Text style={styles.categoryButtonText}>Pork</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton}>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Vegetables')}>
             <Text style={styles.categoryButtonText}>Vegetables</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton}>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Rice/Grain')}>
             <Text style={styles.categoryButtonText}>Rice/Grain</Text>
           </TouchableOpacity>
         </ScrollView>
