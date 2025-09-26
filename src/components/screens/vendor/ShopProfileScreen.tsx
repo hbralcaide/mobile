@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
 import { launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
+import OperatingHoursModal from '../../OperatingHoursModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
 
@@ -21,12 +22,21 @@ interface VendorProfile {
   };
 }
 
+interface OperatingHours {
+  [key: string]: {
+    isOpen: boolean;
+    openTime: string;
+    closeTime: string;
+  };
+}
+
 const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [vendor, setVendor] = useState<VendorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [operatingHours, setOperatingHours] = useState<OperatingHours>({});
   const [formData, setFormData] = useState({
     stallNo: '',
     businessName: '',
@@ -144,6 +154,39 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
     });
   };
 
+  const formatOperatingHours = (hours: OperatingHours): string => {
+    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const openDays = daysOfWeek.filter(day => hours[day]?.isOpen);
+    
+    if (openDays.length === 0) {
+      return 'Closed';
+    }
+    
+    if (openDays.length === 7) {
+      const firstDay = hours[daysOfWeek[0]];
+      const formatTime = (time: string) => {
+        return new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+      };
+      return `${formatTime(firstDay.openTime)} - ${formatTime(firstDay.closeTime)} (Daily)`;
+    }
+    
+    // For mixed schedules, show a summary
+    return `${openDays.length} days open`;
+  };
+
+  const handleOperatingHoursSave = (hours: OperatingHours) => {
+    setOperatingHours(hours);
+    const formattedHours = formatOperatingHours(hours);
+    setFormData(prev => ({
+      ...prev,
+      operatingHours: formattedHours
+    }));
+  };
+
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#22C55E" /></View>;
   }
@@ -228,15 +271,24 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           />
         </View>
 
+        {/* Operating Hours Section with right-aligned Edit */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Operating Hours</Text>
-          <TextInput
-            style={[styles.input, !isEditing && styles.inputDisabled]}
-            value={formData.operatingHours}
-            onChangeText={(text) => setFormData({...formData, operatingHours: text})}
-            placeholder="Enter operating hours"
-            editable={isEditing}
-          />
+          <View style={styles.rowHeader}>
+            <Text style={styles.label}>Operating Hours</Text>
+            <TouchableOpacity onPress={() => setIsEditing(true)}>
+              <Text style={styles.editLink}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.operatingHoursContainer}>
+            <OperatingHoursModal
+              visible={true}
+              onClose={() => setIsEditing(false)}
+              onSave={handleOperatingHoursSave}
+              initialHours={operatingHours}
+              embedded={true}
+              disabled={!isEditing}
+            />
+          </View>
         </View>
 
         {/* Save/Edit Toggle Button */}
@@ -249,6 +301,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
+
     </ScrollView>
   );
 };
@@ -439,10 +492,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#F9FAFB',
     color: '#374151',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   inputDisabled: {
     backgroundColor: '#F5F5F5',
     color: '#666',
+  },
+  inputText: {
+    fontSize: 16,
+    color: '#374151',
+    flex: 1,
+  },
+  inputTextDisabled: {
+    color: '#666',
+  },
+  inputArrow: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  editLink: {
+    color: '#8B5CF6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  operatingHoursContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    marginTop: 8,
   },
   readOnlyInput: {
     borderWidth: 1,
