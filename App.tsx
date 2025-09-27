@@ -38,13 +38,13 @@ function App(): React.ReactElement {
           <Stack.Screen name="ProductList" component={ProductListScreen} />
           <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
           <Stack.Screen name="MarketMap" component={MarketMapScreen} />
-          <Stack.Screen 
-            name="VendorsByCategory" 
+          <Stack.Screen
+            name="VendorsByCategory"
             component={VendorsByCategoryScreen}
             options={{ headerShown: false }}
           />
-          <Stack.Screen 
-            name="VendorDetails" 
+          <Stack.Screen
+            name="VendorDetails"
             component={VendorDetailsScreen}
             options={{ headerShown: false }}
           />

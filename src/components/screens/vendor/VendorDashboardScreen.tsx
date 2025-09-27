@@ -41,7 +41,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         // Get current authenticated user
         const { data: { user } } = await supabase.auth.getUser();
@@ -77,7 +77,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
             .select('stall_number, location_description')
             .eq('vendor_profile_id', vendorData.id)
             .maybeSingle();
-          
+
           console.log('Stall query result:', { stalls, stallError });
           stallData = stalls;
         }
@@ -115,7 +115,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         console.error('Error fetching data:', err);
         setError('Failed to load dashboard data');
       }
-      
+
       setLoading(false);
     };
     fetchData();
@@ -142,7 +142,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.greeting}>Good Morning,</Text>
         <Text style={styles.vendorName}>{vendor.first_name} {vendor.last_name}</Text>
-  <TouchableOpacity style={styles.menuIcon}><Text style={styles.menuIconText}>≡</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.menuIcon}><Text style={styles.menuIconText}>≡</Text></TouchableOpacity>
       </View>
 
       {/* Stats Cards */}
@@ -162,7 +162,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.shopDetail}>Location: Toril Public Market</Text>
             <Text style={styles.shopDetail}>Contact Number: {vendor.phone_number || '—'}</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.profileBtn}
             onPress={() => navigation.navigate('ShopProfile')}
           >

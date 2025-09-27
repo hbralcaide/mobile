@@ -100,10 +100,10 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       console.log('Attempting to fetch vendor products from Supabase...');
-      
+
       // Get current vendor profile first
       const vendorProfile = currentVendorProfile || await getCurrentVendorProfile();
       if (!vendorProfile) {
@@ -124,9 +124,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         `)
         .eq('vendor_id', vendorProfile.id)
         .order('created_at', { ascending: false });
-        
+
       console.log('Supabase response:', { data, error: prodError, count: data?.length });
-      
+
       if (prodError) {
         console.error('Supabase error details:', prodError);
         setError(`Failed to load products: ${prodError.message}`);
@@ -134,7 +134,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       } else {
         console.log('Products fetched successfully:', data?.length || 0, 'items');
         setProducts(data || []);
-        
+
         // Debug: Log each product
         if (data && data.length > 0) {
           console.log('Product details:');
@@ -148,7 +148,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       setError('Network connection failed. Please check your internet connection.');
       setProducts([]);
     }
-    
+
     setLoading(false);
   };
 
@@ -160,9 +160,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       await getCurrentVendorProfile();
       await fetchProducts();
     };
-    
+
     initialize();
-    
+
     // Fetch categories from Supabase
     const fetchCategories = async () => {
       try {
@@ -184,25 +184,25 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       }
     };
     fetchCategories();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openAddModal = () => {
     setEditProduct(null);
-    
+
     // Infer category from business name if no market section assigned
     const inferredCategory = currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'General';
-    
-    setForm({ 
-      name: '', 
-      price: '', 
-      category_id: '', 
-      uom: '', 
-      status: 'Available' 
+
+    setForm({
+      name: '',
+      price: '',
+      category_id: '',
+      uom: '',
+      status: 'Available'
     });
     setCategoryInput(
-      currentVendorProfile?.market_sections?.name || 
-      currentVendorProfile?.category || 
+      currentVendorProfile?.market_sections?.name ||
+      currentVendorProfile?.category ||
       inferredCategory
     );
     setModalVisible(true);
@@ -210,10 +210,10 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
 
   const openEditModal = (vendorProduct: any) => {
     setEditProduct(vendorProduct);
-    
+
     // Infer category from business name if no market section assigned
     const inferredCategory = currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'General';
-    
+
     setForm({
       name: vendorProduct.products?.name || '',
       price: String(vendorProduct.price || ''),
@@ -222,8 +222,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       status: vendorProduct.status === 'available' ? 'Available' : 'Unavailable'
     });
     setCategoryInput(
-      currentVendorProfile?.market_sections?.name || 
-      currentVendorProfile?.category || 
+      currentVendorProfile?.market_sections?.name ||
+      currentVendorProfile?.category ||
       inferredCategory
     );
     setModalVisible(true);
@@ -262,7 +262,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         setSaving(false);
         return;
       }
-      
+
       // Get current vendor profile ID
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -270,19 +270,19 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         setSaving(false);
         return;
       }
-      
+
       const { data: vendorProfile } = await supabase
         .from('vendor_profiles')
         .select('id')
         .eq('auth_user_id', user.id)
         .single();
-      
+
       if (!vendorProfile) {
         Alert.alert('Error', 'Vendor profile not found. Please contact support.');
         setSaving(false);
         return;
       }
-      
+
       // First, find or create the product in the products table
       let productId;
       const { data: existingProduct } = await supabase
@@ -290,7 +290,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         .select('id')
         .eq('name', form.name)
         .single();
-      
+
       if (existingProduct) {
         productId = existingProduct.id;
         console.log('Using existing product ID:', productId);
@@ -298,24 +298,24 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         // Create new product in products table
         const { data: newProduct, error: productError } = await supabase
           .from('products')
-          .insert({ 
+          .insert({
             name: form.name,
             description: `${form.name} - Fresh fish product`
           })
           .select('id')
           .single();
-        
+
         if (productError || !newProduct) {
           console.error('Failed to create product:', productError);
           Alert.alert('Error', 'Failed to create product.');
           setSaving(false);
           return;
         }
-        
+
         productId = newProduct.id;
         console.log('Created new product with ID:', productId);
       }
-      
+
       // Now create or update the vendor_products record
       const vendorProductData = {
         product_id: productId,
@@ -325,9 +325,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         status: form.status === 'Available' ? 'available' : 'unavailable',
         visibility: true
       };
-      
+
       console.log('Saving vendor product data:', vendorProductData);
-      
+
       let result;
       if (editProduct) {
         console.log('Updating vendor product:', editProduct.id);
@@ -341,9 +341,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
           .from('vendor_products')
           .insert(vendorProductData);
       }
-      
+
       console.log('Save result:', result);
-      
+
       if (result.error) {
         console.error('Error saving vendor product:', result.error);
         Alert.alert('Error', `Failed to ${editProduct ? 'update' : 'create'} product: ${result.error.message}`);
@@ -408,36 +408,36 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Modal for Add/Edit */}
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
           activeOpacity={1}
           onPress={() => {
             setShowProductNameDropdown(false);
             setShowUomDropdown(false);
           }}
         >
-          <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => {}}>
+          <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => { }}>
             <Text style={styles.modalTitleCustom}>{editProduct ? 'Edit Product' : 'Add New Product'}</Text>
             <View style={styles.imagePlaceholder} />
-            
+
             <View style={styles.fieldRowVertical}>
               <Text style={styles.fieldLabelVertical}>Category:</Text>
               <View style={styles.readOnlyInput}>
                 <Text style={styles.readOnlyText}>
-                  {currentVendorProfile?.market_sections?.name || 
-                   currentVendorProfile?.category || 
-                   (currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'Pending Assignment')}
+                  {currentVendorProfile?.market_sections?.name ||
+                    currentVendorProfile?.category ||
+                    (currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'Pending Assignment')}
                 </Text>
               </View>
             </View>
-            
+
             <View style={styles.fieldRowVertical}>
               <Text style={styles.fieldLabelVertical}>Product Name:</Text>
               <View style={styles.dropdownContainer}>
-                <TextInput 
-                  style={styles.inputVertical} 
-                  placeholder="Select product name" 
-                  value={form.name} 
+                <TextInput
+                  style={styles.inputVertical}
+                  placeholder="Select product name"
+                  value={form.name}
                   onChangeText={text => {
                     setForm(f => ({ ...f, name: text }));
                     setShowProductNameDropdown(true);
@@ -448,14 +448,14 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
                 />
                 {showProductNameDropdown && (
                   <View style={styles.dropdownMenuScrollable}>
-                    <ScrollView 
+                    <ScrollView
                       style={styles.scrollableContainer}
                       showsVerticalScrollIndicator={true}
                       nestedScrollEnabled={true}
                       keyboardShouldPersistTaps="handled"
                     >
-                      {fishProductNames.filter(productItem => 
-                        form.name.length === 0 || 
+                      {fishProductNames.filter(productItem =>
+                        form.name.length === 0 ||
                         productItem.name.toLowerCase().includes(form.name.toLowerCase())
                       ).map((productItem, index) => (
                         <TouchableOpacity
@@ -463,10 +463,10 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
                           style={styles.dropdownItem}
                           onPress={() => {
                             console.log('Selected product:', productItem.name, 'Price:', productItem.price);
-                            setForm(f => ({ 
-                              ...f, 
+                            setForm(f => ({
+                              ...f,
                               name: productItem.name,
-                              price: productItem.price 
+                              price: productItem.price
                             }));
                             setShowProductNameDropdown(false);
                           }}
@@ -485,8 +485,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
                 <TextInput style={styles.inputPrice} placeholder="Price" value={form.price} onChangeText={text => setForm(f => ({ ...f, price: text }))} keyboardType="numeric" /></View></View>
             <View style={styles.fieldRowVertical}><Text style={styles.fieldLabelVertical}>Unit of Measurement:</Text>
               <View style={styles.dropdownContainer}>
-                <TouchableOpacity 
-                  style={styles.inputVertical} 
+                <TouchableOpacity
+                  style={styles.inputVertical}
                   onPress={() => setShowUomDropdown(!showUomDropdown)}
                 >
                   <Text style={[styles.dropdownPlaceholder, form.uom && styles.dropdownSelected]}>
