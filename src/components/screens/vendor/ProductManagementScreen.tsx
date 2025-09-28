@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+import { SessionManager } from '../../../utils/sessionManager';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductManagement'>;
 
@@ -67,30 +68,28 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   // Get current vendor profile
   const getCurrentVendorProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+        // Get the current logged-in vendor from session
+        const session = SessionManager.getSession();
+        if (!session) {
+          Alert.alert('Error', 'Please login to manage products');
+          return;
+        }
 
-      const { data: vendorProfile, error: vendorError } = await supabase
-        .from('vendor_profiles')
-        .select(`
-          *,
-          market_sections (
-            name
-          )
-        `)
-        .eq('auth_user_id', user.id)
-        .single();
-
-      if (vendorError) {
+        // Get the vendor profile using the session vendorId
+        const { data: vendorData, error: vendorError } = await supabase
+          .from('vendor_profiles')
+          .select('*')
+          .eq('id', session.vendorId)
+          .single();      if (vendorError) {
         console.error('Error fetching vendor profile:', vendorError);
         return null;
       }
 
       // Debug: Log the vendor profile data to see what we're getting
-      console.log('Vendor Profile Data:', JSON.stringify(vendorProfile, null, 2));
+      console.log('Vendor Profile Data:', JSON.stringify(vendorData, null, 2));
 
-      setCurrentVendorProfile(vendorProfile);
-      return vendorProfile;
+      setCurrentVendorProfile(vendorData);
+      return vendorData;
     } catch (err) {
       console.error('Error getting current vendor:', err);
       return null;
@@ -263,10 +262,10 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      // Get current vendor profile ID
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to manage products.');
+      // Get current vendor profile ID using session
+      const session = SessionManager.getSession();
+      if (!session) {
+        Alert.alert('Error', 'Please login to add products');
         setSaving(false);
         return;
       }
@@ -274,7 +273,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       const { data: vendorProfile } = await supabase
         .from('vendor_profiles')
         .select('id')
-        .eq('auth_user_id', user.id)
+        .eq('id', session.vendorId)
         .single();
 
       if (!vendorProfile) {

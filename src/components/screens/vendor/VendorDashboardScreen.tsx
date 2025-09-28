@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+import { SessionManager } from '../../../utils/sessionManager';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VendorDashboard'>;
 
@@ -36,6 +37,9 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Get the current session to show logged-in user's name
+  const session = SessionManager.getSession();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -43,19 +47,19 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       setError(null);
 
       try {
-        // Get current authenticated user
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        // Get the current logged-in vendor from session
+        const session = SessionManager.getSession();
+        if (!session) {
           setError('Please login to view dashboard');
           setLoading(false);
           return;
         }
 
-        // Fetch current vendor profile with stall information
+        // Get the vendor profile using the vendor ID from session (since actual occupant shares same vendor profile)
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
           .select('*')
-          .eq('auth_user_id', user.id)
+          .eq('id', session.vendorId)
           .single();
 
         if (vendorError) {
@@ -141,7 +145,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.greeting}>Good Morning,</Text>
-        <Text style={styles.vendorName}>{vendor.first_name} {vendor.last_name}</Text>
+        <Text style={styles.vendorName}>{session?.firstName} {session?.lastName}</Text>
         <TouchableOpacity style={styles.menuIcon}><Text style={styles.menuIconText}>≡</Text></TouchableOpacity>
       </View>
 

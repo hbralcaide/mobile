@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+import { SessionManager } from '../../../utils/sessionManager';
 import { launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
@@ -27,6 +28,9 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  
+  // Get the current session to show logged-in user's info
+  const session = SessionManager.getSession();
   const [formData, setFormData] = useState({
     stallNo: '',
     businessName: '',
@@ -40,9 +44,9 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       setError(null);
       
       try {
-        // Get current authenticated user
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        // Get the current logged-in vendor from session
+        const session = SessionManager.getSession();
+        if (!session) {
           setError('Please login to view profile');
           setLoading(false);
           return;
@@ -52,7 +56,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
           .select('*')
-          .eq('auth_user_id', user.id)
+          .eq('id', session.vendorId)
           .single();
 
         if (vendorError) {
@@ -178,7 +182,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
               <Image source={{ uri: profileImage }} style={styles.profileImage} />
             ) : (
               <Text style={styles.profileInitial}>
-                {vendor.first_name?.charAt(0) || 'V'}
+                {session?.firstName?.charAt(0) || 'V'}
               </Text>
             )}
           </TouchableOpacity>
@@ -198,6 +202,26 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Form Section */}
       <View style={styles.formSection}>
+        {/* Logged-in User Info */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Logged in as</Text>
+          <View style={styles.readOnlyInput}>
+            <Text style={styles.readOnlyText}>
+              {session?.firstName} {session?.lastName} 
+              {session?.isActualOccupant ? ' (Actual Occupant)' : ' (Vendor)'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Show vendor info if logged in as actual occupant */}
+        {session?.isActualOccupant && vendor && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Vendor</Text>
+            <View style={styles.readOnlyInput}>
+              <Text style={styles.readOnlyText}>{vendor.first_name} {vendor.last_name}</Text>
+            </View>
+          </View>
+        )}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Stall No.</Text>
           <View style={styles.readOnlyInput}>

@@ -101,7 +101,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const fullName = `${first} ${last}`.trim();
       setActualOccupant(fullName);
-      
+
       if (first && last) {
         generateActualOccupantUsernameFromNames(first, last);
       } else {
@@ -117,7 +117,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleActualOccupantToggle = (value: boolean) => {
     setShowActualOccupant(value);
-    
+
     if (!value) {
       // Clear all actual occupant fields when toggle is turned off
       setActualOccupantFirstName('');
@@ -132,10 +132,10 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     try {
       // Remove all non-digit characters
       const digitsOnly = text.replace(/\D/g, '');
-      
+
       // Limit to 10 digits
       const limitedDigits = digitsOnly.slice(0, 10);
-      
+
       // Format as Philippine mobile number (xxx xxx xxxx)
       let formatted = limitedDigits;
       if (limitedDigits.length >= 3) {
@@ -149,7 +149,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           formatted += ' ' + limitedDigits.slice(3);
         }
       }
-      
+
       setActualOccupantPhone(formatted);
     } catch (error) {
       console.error('Error formatting actual occupant phone number:', error);
@@ -168,7 +168,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       // Remove spaces and special characters from last name
       const cleanLastName = last.replace(/[^a-zA-Z]/g, '').toLowerCase();
       const baseUsername = `${first.charAt(0).toLowerCase()}${cleanLastName}`;
-      
+
       // For demo purposes, we'll just use the base username
       // In a real app, you'd check against existing usernames in the database
       setUsername(baseUsername);
@@ -189,7 +189,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       // Remove spaces and special characters from last name
       const cleanLastName = last.replace(/[^a-zA-Z]/g, '').toLowerCase();
       const baseUsername = `${first.charAt(0).toLowerCase()}${cleanLastName}`;
-      
+
       setActualOccupantUsername(baseUsername);
     } catch (error) {
       console.error('Error generating actual occupant username:', error);
@@ -201,10 +201,10 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     try {
       // Remove all non-digit characters
       const digitsOnly = text.replace(/\D/g, '');
-      
+
       // Limit to 10 digits
       const limitedDigits = digitsOnly.slice(0, 10);
-      
+
       // Format as Philippine mobile number (xxx xxx xxxx)
       let formatted = limitedDigits;
       if (limitedDigits.length >= 3) {
@@ -218,7 +218,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
           formatted += ' ' + limitedDigits.slice(3);
         }
       }
-      
+
       setPhoneNumber(formatted);
     } catch (error) {
       console.error('Error formatting phone number:', error);
@@ -243,7 +243,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
       // Validate phone numbers
       const phoneDigits = phoneNumber.replace(/\D/g, '');
-      
+
       if (phoneDigits.length !== 10) {
         Alert.alert('Error', 'Your phone number must be exactly 10 digits');
         return;
@@ -342,7 +342,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
       if (data?.user) {
         console.log('User created successfully:', data.user);
-        
+
         // Create vendor profile record
         const vendorProfileData = {
           auth_user_id: data.user.id,
@@ -380,9 +380,9 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         } else {
           console.log('Vendor profile created successfully:', profileData);
         }
-        
+
         setShowSuccessModal(true);
-        
+
         // Don't show the modal, go directly to login
         // setShowSuccessModal(true);
       } else {
@@ -403,267 +403,267 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Apply as Vendor</Text>
-          <Text style={styles.subtitle}>Join Mapalengke marketplace</Text>
-        </View>
-        
-        <View style={styles.form}>
-          {/* Market Section Dropdown */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Market Section</Text>
-            <Text style={styles.productsLabel}>Select the section that matches your products</Text>
-            <View style={styles.dropdownContainer}>
-              {marketSectionLoading ? (
-                <ActivityIndicator size="small" color="#667eea" />
-              ) : marketSectionError ? (
-                <Text style={styles.errorText}>{marketSectionError}</Text>
-              ) : (
-                <Picker
-                  selectedValue={selectedSection}
-                  onValueChange={(itemValue: string) => setSelectedSection(itemValue)}
-                  style={styles.dropdown}
-                >
-                  <Picker.Item label="Select section..." value="" />
-                  {marketSections.map(section => (
-                    <Picker.Item key={section.id} label={section.name} value={section.id.toString()} />
-                  ))}
-                </Picker>
-              )}
-            </View>
-          </View>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>First Name</Text>
-            <TextInput
-              style={styles.input}
-              value={firstName}
-              onChangeText={handleFirstNameChange}
-              autoCapitalize="words"
-              autoCorrect={false}
-              placeholder="Enter your first name"
-            />
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Apply as Vendor</Text>
+            <Text style={styles.subtitle}>Join Mapalengke marketplace</Text>
           </View>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Last Name</Text>
-            <TextInput
-              style={styles.input}
-              value={lastName}
-              onChangeText={handleLastNameChange}
-              autoCapitalize="words"
-              autoCorrect={false}
-              placeholder="Enter your last name"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Username</Text>
-            <TextInput
-              style={[styles.input, styles.usernameInput]}
-              value={username}
-              editable={false}
-              placeholder="Auto-generated username"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              placeholder="Enter your email"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Mobile Number</Text>
-            <View style={styles.phoneInputContainer}>
-              <View style={styles.countryCodeBox}>
-                <Text style={styles.countryCodeText}>+63</Text>
+          <View style={styles.form}>
+            {/* Market Section Dropdown */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Market Section</Text>
+              <Text style={styles.productsLabel}>Select the section that matches your products</Text>
+              <View style={styles.dropdownContainer}>
+                {marketSectionLoading ? (
+                  <ActivityIndicator size="small" color="#667eea" />
+                ) : marketSectionError ? (
+                  <Text style={styles.errorText}>{marketSectionError}</Text>
+                ) : (
+                  <Picker
+                    selectedValue={selectedSection}
+                    onValueChange={(itemValue: string) => setSelectedSection(itemValue)}
+                    style={styles.dropdown}
+                  >
+                    <Picker.Item label="Select section..." value="" />
+                    {marketSections.map(section => (
+                      <Picker.Item key={section.id} label={section.name} value={section.id.toString()} />
+                    ))}
+                  </Picker>
+                )}
               </View>
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>First Name</Text>
               <TextInput
-                style={styles.phoneInput}
-                value={phoneNumber}
-                onChangeText={handlePhoneNumberChange}
-                keyboardType="numeric"
-                placeholder="xxx xxx xxxx"
-                maxLength={13} // xxx xxx xxxx with spaces
+                style={styles.input}
+                value={firstName}
+                onChangeText={handleFirstNameChange}
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="Enter your first name"
               />
             </View>
-          </View>
 
-          <View style={styles.sectionSeparator}>
-            <View style={styles.toggleContainer}>
-              <View style={styles.toggleTextContainer}>
-                <Text style={styles.sectionTitle}>Actual Stall Occupant Information</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Enable if someone else will be operating the stall
-                </Text>
-              </View>
-              <Switch
-                value={showActualOccupant}
-                onValueChange={handleActualOccupantToggle}
-                trackColor={{ false: '#E5E5E5', true: '#667eea' }}
-                thumbColor={showActualOccupant ? '#fff' : '#fff'}
-                ios_backgroundColor="#E5E5E5"
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                value={lastName}
+                onChangeText={handleLastNameChange}
+                autoCapitalize="words"
+                autoCorrect={false}
+                placeholder="Enter your last name"
               />
             </View>
-          </View>
 
-          {showActualOccupant && (
-            <>
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Actual Occupant First Name</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={[styles.input, styles.usernameInput]}
+                value={username}
+                editable={false}
+                placeholder="Auto-generated username"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholder="Enter your email"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Mobile Number</Text>
+              <View style={styles.phoneInputContainer}>
+                <View style={styles.countryCodeBox}>
+                  <Text style={styles.countryCodeText}>+63</Text>
+                </View>
                 <TextInput
-                  style={styles.input}
-                  value={actualOccupantFirstName}
-                  onChangeText={handleActualOccupantFirstNameChange}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  placeholder="First name of person who will operate the stall"
+                  style={styles.phoneInput}
+                  value={phoneNumber}
+                  onChangeText={handlePhoneNumberChange}
+                  keyboardType="numeric"
+                  placeholder="xxx xxx xxxx"
+                  maxLength={13} // xxx xxx xxxx with spaces
                 />
               </View>
+            </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Actual Occupant Last Name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={actualOccupantLastName}
-                  onChangeText={handleActualOccupantLastNameChange}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  placeholder="Last name of person who will operate the stall"
+            <View style={styles.sectionSeparator}>
+              <View style={styles.toggleContainer}>
+                <View style={styles.toggleTextContainer}>
+                  <Text style={styles.sectionTitle}>Actual Stall Occupant Information</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Enable if someone else will be operating the stall
+                  </Text>
+                </View>
+                <Switch
+                  value={showActualOccupant}
+                  onValueChange={handleActualOccupantToggle}
+                  trackColor={{ false: '#E5E5E5', true: '#667eea' }}
+                  thumbColor={showActualOccupant ? '#fff' : '#fff'}
+                  ios_backgroundColor="#E5E5E5"
                 />
               </View>
+            </View>
 
-              {(actualOccupantFirstName.trim().length > 0 && actualOccupantLastName.trim().length > 0) && (
-                <>
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Actual Occupant Username</Text>
-                    <TextInput
-                      style={[styles.input, styles.usernameInput]}
-                      value={actualOccupantUsername}
-                      editable={false}
-                      placeholder="Auto-generated username for occupant"
-                    />
-                    <Text style={styles.usernameHint}>
-                      Generated from actual occupant's name
-                    </Text>
-                  </View>
+            {showActualOccupant && (
+              <>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Actual Occupant First Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={actualOccupantFirstName}
+                    onChangeText={handleActualOccupantFirstNameChange}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    placeholder="First name of person who will operate the stall"
+                  />
+                </View>
 
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Actual Occupant Mobile Number</Text>
-                    <View style={styles.phoneInputContainer}>
-                      <View style={styles.countryCodeBox}>
-                        <Text style={styles.countryCodeText}>+63</Text>
-                      </View>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Actual Occupant Last Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={actualOccupantLastName}
+                    onChangeText={handleActualOccupantLastNameChange}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    placeholder="Last name of person who will operate the stall"
+                  />
+                </View>
+
+                {(actualOccupantFirstName.trim().length > 0 && actualOccupantLastName.trim().length > 0) && (
+                  <>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.label}>Actual Occupant Username</Text>
                       <TextInput
-                        style={styles.phoneInput}
-                        value={actualOccupantPhone}
-                        onChangeText={handleActualOccupantPhoneChange}
-                        keyboardType="numeric"
-                        placeholder="xxx xxx xxxx"
-                        maxLength={13} // xxx xxx xxxx with spaces
+                        style={[styles.input, styles.usernameInput]}
+                        value={actualOccupantUsername}
+                        editable={false}
+                        placeholder="Auto-generated username for occupant"
                       />
+                      <Text style={styles.usernameHint}>
+                        Generated from actual occupant's name
+                      </Text>
                     </View>
-                  </View>
-                </>
-              )}
-            </>
-          )}
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="Enter your password"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="Confirm your password"
-            />
-          </View>
-
-          <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleRegister}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Submit Application</Text>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.label}>Actual Occupant Mobile Number</Text>
+                      <View style={styles.phoneInputContainer}>
+                        <View style={styles.countryCodeBox}>
+                          <Text style={styles.countryCodeText}>+63</Text>
+                        </View>
+                        <TextInput
+                          style={styles.phoneInput}
+                          value={actualOccupantPhone}
+                          onChangeText={handleActualOccupantPhoneChange}
+                          keyboardType="numeric"
+                          placeholder="xxx xxx xxxx"
+                          maxLength={13} // xxx xxx xxxx with spaces
+                        />
+                      </View>
+                    </View>
+                  </>
+                )}
+              </>
             )}
-          </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backButtonText}>Back to Login</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </ScrollView>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Enter your password"
+              />
+            </View>
 
-    {/* Success Modal */}
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={showSuccessModal}
-      onRequestClose={() => setShowSuccessModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalIcon}>
-            <Text style={styles.checkmark}>✓</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <TextInput
+                style={styles.input}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Confirm your password"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Submit Application</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.backButtonText}>Back to Login</Text>
+            </TouchableOpacity>
           </View>
-          
-          <Text style={styles.modalTitle}>Application Submitted!</Text>
-          
-          <Text style={styles.modalMessage}>
-            Thank you for applying to become a vendor at Mapalengke! 
-            {'\n\n'}
-            Your application has been submitted successfully. 
-            {'\n\n'}
-            Please wait for our admin team to review and accept your application. You can check your application status by logging in.
-            {'\n\n'}
-            <Text style={styles.modalNoteText}>
-              Note: You can now log in with your credentials while waiting for approval.
-            </Text>
-          </Text>
-          
-          <TouchableOpacity 
-            style={styles.modalButton}
-            onPress={() => {
-              setShowSuccessModal(false);
-              navigation.replace('Login');
-            }}
-          >
-            <Text style={styles.modalButtonText}>Continue to Login</Text>
-          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      </ScrollView>
+
+      {/* Success Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showSuccessModal}
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalIcon}>
+              <Text style={styles.checkmark}>✓</Text>
+            </View>
+
+            <Text style={styles.modalTitle}>Application Submitted!</Text>
+
+            <Text style={styles.modalMessage}>
+              Thank you for applying to become a vendor at Mapalengke!
+              {'\n\n'}
+              Your application has been submitted successfully.
+              {'\n\n'}
+              Please wait for our admin team to review and accept your application. You can check your application status by logging in.
+              {'\n\n'}
+              <Text style={styles.modalNoteText}>
+                Note: You can now log in with your credentials while waiting for approval.
+              </Text>
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                setShowSuccessModal(false);
+                navigation.replace('Login');
+              }}
+            >
+              <Text style={styles.modalButtonText}>Continue to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 };

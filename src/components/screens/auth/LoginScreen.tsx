@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityInd
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+import { simpleHashPassword } from '../../../utils/simpleAuth';
+import { SessionManager } from '../../../utils/sessionManager';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -20,70 +22,92 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      // Lookup email by username
-      const { data: vendorProfile } = await supabase
+      // Hash the entered password using SHA-256
+      const passwordHash = simpleHashPassword(password);
+
+      console.log('Login attempt for username:', username);
+      console.log('Password entered:', password);
+      console.log('Generated password hash:', passwordHash);
+      
+      // Test with known password and hash
+      if (password === 'ranactae1') {
+        const expectedHash = 'f6f6dbf89c77d3e3463a501e0523105709ce20ac1027b8a39576ca1d46d18cb5';
+        console.log('Expected hash for ranactae1:', expectedHash);
+        console.log('Generated hash matches expected:', passwordHash === expectedHash);
+      }
+
+      // Lookup vendor profile by username (check both main vendor and actual occupant)
+      const { data: vendorProfile, error: profileError } = await supabase
         .from('vendor_profiles')
-        .select('email, application_status, status, first_name, last_name, auth_user_id')
-        .eq('username', username)
+        .select('id, email, application_status, status, first_name, last_name, auth_user_id, password_hash, role, username, business_name, actual_occupant_first_name, actual_occupant_last_name, actual_occupant_username, actual_occupant_password_hash')
+        .or(`username.eq.${username},actual_occupant_username.eq.${username}`)
         .single();
 
-      if (!vendorProfile) {
-        Alert.alert('Error', 'No account found for this username.');
+      if (profileError || !vendorProfile) {
+        console.error('Profile lookup error:', profileError);
+        Alert.alert('Error', 'Invalid username or password.');
         return;
       }
 
-      const { email, application_status, status, first_name, last_name, auth_user_id } = vendorProfile;
-
-      // Authenticate using email
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      console.log('Found vendor profile:', {
+        id: vendorProfile.id,
+        username: username,
+        status: vendorProfile.status,
+        application_status: vendorProfile.application_status
       });
 
-      if (error) throw error;
+      // Check if logging in as main vendor or actual occupant
+      const isActualOccupant = vendorProfile.actual_occupant_username === username;
+      const expectedHash = isActualOccupant ? vendorProfile.actual_occupant_password_hash : vendorProfile.password_hash;
+      
+      console.log('Login type:', isActualOccupant ? 'Actual Occupant' : 'Main Vendor');
+      console.log('Database password hash:', expectedHash);
+      console.log('Generated password hash:', passwordHash);
+      console.log('Hashes match:', expectedHash === passwordHash);
 
-      if (data.user) {
-        // Only allow login if approved
-        if (application_status === 'approved' || status === 'Active') {
-          navigation.replace('VendorDashboard');
-          return;
-        } else if (application_status === 'pending' || status === 'Pending') {
-          Alert.alert('Application Under Review', 'Your vendor application is still under review. Please check your status before logging in.');
-          return;
-        } else if (application_status === 'rejected' || status === 'Rejected') {
-          Alert.alert('Application Not Approved', 'Your vendor application was not approved. Please contact support.');
-          return;
-        }
-
-        // Check user role and navigate accordingly (for non-vendors or admin)
-        const userRole = data.user.user_metadata.role;
-
-        switch (userRole) {
-          case 'admin':
-            Alert.alert(
-              'Admin Access',
-              'Admin functionality is available through the web interface. Please use the web dashboard to manage the system.',
-              [{ text: 'OK', onPress: () => navigation.replace('Home') }]
-            );
-            break;
-          case 'vendor':
-            // If no vendor profile found but role is vendor, show error
-            Alert.alert(
-              'Profile Not Found',
-              'Your vendor profile could not be found. Please contact support.',
-              [{ text: 'OK' }]
-            );
-            break;
-          default:
-            // Regular user, go to home
-            navigation.replace('Home');
-        }
+      // Verify password hash
+      if (expectedHash !== passwordHash) {
+        Alert.alert(
+          'Login Failed', 
+          `Invalid username or password.\n\nDebug Info:\nEntered password: ${password}\nGenerated hash: ${passwordHash.substring(0, 20)}...\nStored hash: ${expectedHash?.substring(0, 20) || 'null'}...\n\nPlease contact admin if this persists.`
+        );
+        return;
       }
+
+      console.log('Password verified successfully');
+
+      // Set the session for the logged-in user (either main vendor or actual occupant)
+      if (isActualOccupant) {
+        SessionManager.setSession({
+          username: vendorProfile.actual_occupant_username,
+          vendorId: vendorProfile.id,
+          firstName: vendorProfile.actual_occupant_first_name,
+          lastName: vendorProfile.actual_occupant_last_name,
+          businessName: vendorProfile.business_name,
+          isActualOccupant: true
+        });
+      } else {
+        SessionManager.setSession({
+          username: vendorProfile.username,
+          vendorId: vendorProfile.id,
+          firstName: vendorProfile.first_name,
+          lastName: vendorProfile.last_name,
+          businessName: vendorProfile.business_name,
+          isActualOccupant: false
+        });
+      }
+
+      // Since application process is handled on the website, 
+      // mobile app should just allow login for valid credentials
+      console.log('Login successful, navigating to dashboard');
+      navigation.replace('VendorDashboard');
+
     } catch (error) {
+      console.error('Login error:', error);
       if (error instanceof Error) {
         Alert.alert('Error', error.message);
       } else {
-        Alert.alert('Error', 'Failed to sign in');
+        Alert.alert('Error', 'Failed to sign in. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -91,29 +115,20 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleForgotPassword = async () => {
-    try {
-      if (!username) {
-        Alert.alert('Error', 'Please enter your email address');
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(username, {
-        redirectTo: 'mapalengke://auth/reset-password',
-      });
-
-      if (error) throw error;
-
-      Alert.alert(
-        'Password Reset',
-        'If an account exists for this email, you will receive password reset instructions.'
-      );
-    } catch (error) {
-      if (error instanceof Error) {
-        Alert.alert('Error', error.message);
-      } else {
-        Alert.alert('Error', 'Failed to send reset instructions');
-      }
-    }
+    Alert.alert(
+      'Password Reset',
+      'Password reset functionality is currently unavailable. Please contact support for assistance with password recovery.',
+      [
+        { text: 'OK' },
+        { 
+          text: 'Contact Support', 
+          onPress: () => {
+            // You can add contact support functionality here
+            Alert.alert('Contact Support', 'Please email support@mapalengke.com or call +63-xxx-xxxx for password reset assistance.');
+          }
+        }
+      ]
+    );
   };
 
   // const handleCheckStatus = async () => {
