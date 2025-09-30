@@ -41,6 +41,14 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
   // Get the current session to show logged-in user's name
   const session = SessionManager.getSession();
 
+  const handleLogout = () => {
+    SessionManager.clearSession();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }]
+    });
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -147,9 +155,13 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>Good Morning,</Text>
-        <Text style={styles.vendorName}>{session?.firstName} {session?.lastName}</Text>
-        <TouchableOpacity style={styles.menuIcon}><Text style={styles.menuIconText}>≡</Text></TouchableOpacity>
+        <View>
+          <Text style={styles.greeting}>Good Morning,</Text>
+          <Text style={styles.vendorName}>{session?.firstName} {session?.lastName}</Text>
+        </View>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Stats Cards */}
@@ -212,11 +224,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  menuIconText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
   // statusActive and statusInactive already exist above, so remove these duplicates
   scroll: {
     flex: 1,
@@ -246,8 +253,19 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     letterSpacing: 0.5,
   },
-  menuIcon: {
-    padding: 8,
+  logoutButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+    backgroundColor: '#15803D',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+    letterSpacing: 0.2,
   },
   statsRow: {
     flexDirection: 'row',

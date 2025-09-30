@@ -6,14 +6,26 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
+import { SessionManager } from '../../../utils/sessionManager';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const CustomerHome: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (SessionManager.isLoggedIn()) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'VendorDashboard' }]
+        });
+      }
+    }, [navigation])
+  );
 
   const handleGetStarted = () => {
     navigation.navigate('Market');
