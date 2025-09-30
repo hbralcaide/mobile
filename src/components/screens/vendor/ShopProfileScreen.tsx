@@ -46,7 +46,9 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       try {
         // Get the current logged-in vendor from session
         const session = SessionManager.getSession();
+        console.log('ShopProfile session:', session);
         if (!session) {
+          console.log('No session found in shop profile');
           setError('Please login to view profile');
           setLoading(false);
           return;

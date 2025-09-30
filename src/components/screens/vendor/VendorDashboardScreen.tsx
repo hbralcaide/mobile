@@ -49,13 +49,16 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       try {
         // Get the current logged-in vendor from session
         const session = SessionManager.getSession();
+        console.log('Dashboard session:', session);
         if (!session) {
+          console.log('No session found in dashboard');
           setError('Please login to view dashboard');
           setLoading(false);
           return;
         }
 
         // Get the vendor profile using the vendor ID from session (since actual occupant shares same vendor profile)
+        console.log('Fetching vendor data for ID:', session.vendorId);
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
           .select('*')
