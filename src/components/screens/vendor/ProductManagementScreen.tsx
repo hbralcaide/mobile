@@ -68,22 +68,22 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   // Get current vendor profile
   const getCurrentVendorProfile = async () => {
     try {
-        // Get the current logged-in vendor from session
-        const session = SessionManager.getSession();
-        if (!session) {
-          Alert.alert('Error', 'Please login to manage products');
-          return;
-        }
-
-        // Get the vendor profile using the session vendorId
-        const { data: vendorData, error: vendorError } = await supabase
-          .from('vendor_profiles')
-          .select('*')
-          .eq('id', session.vendorId)
-          .single();      if (vendorError) {
-        console.error('Error fetching vendor profile:', vendorError);
-        return null;
+      // Get the current logged-in vendor from session
+      const session = SessionManager.getSession();
+      if (!session) {
+        Alert.alert('Error', 'Please login to manage products');
+        return;
       }
+
+      // Get the vendor profile using the session vendorId
+      const { data: vendorData, error: vendorError } = await supabase
+        .from('vendor_profiles')
+        .select('*')
+        .eq('id', session.vendorId)
+        .single(); if (vendorError) {
+          console.error('Error fetching vendor profile:', vendorError);
+          return null;
+        }
 
       // Debug: Log the vendor profile data to see what we're getting
       console.log('Vendor Profile Data:', JSON.stringify(vendorData, null, 2));

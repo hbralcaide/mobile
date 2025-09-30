@@ -23,14 +23,14 @@ export const hashPasswordAlternative = (password: string): string => {
 export const testHashGeneration = () => {
   const testPassword = 'ranactae1';
   const expectedHash = 'f6f6dbf89c77d3e3463a501e0523105709ce20ac1027b8a39576ca1d46d18cb5';
-  
+
   const generatedHash = hashPasswordAlternative(testPassword);
-  
+
   console.log('=== Hash Test Results ===');
   console.log('Test password:', testPassword);
   console.log('Expected hash:', expectedHash);
   console.log('Generated hash:', generatedHash);
   console.log('Match:', generatedHash === expectedHash);
-  
+
   return generatedHash === expectedHash;
 };

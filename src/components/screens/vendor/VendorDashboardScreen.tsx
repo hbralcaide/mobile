@@ -37,7 +37,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Get the current session to show logged-in user's name
   const session = SessionManager.getSession();
 

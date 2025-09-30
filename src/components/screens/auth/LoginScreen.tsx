@@ -28,7 +28,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       console.log('Login attempt for username:', username);
       console.log('Password entered:', password);
       console.log('Generated password hash:', passwordHash);
-      
+
       // Test with known password and hash
       if (password === 'ranactae1') {
         const expectedHash = 'f6f6dbf89c77d3e3463a501e0523105709ce20ac1027b8a39576ca1d46d18cb5';
@@ -59,7 +59,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       // Check if logging in as main vendor or actual occupant
       const isActualOccupant = vendorProfile.actual_occupant_username === username;
       const expectedHash = isActualOccupant ? vendorProfile.actual_occupant_password_hash : vendorProfile.password_hash;
-      
+
       console.log('Login type:', isActualOccupant ? 'Actual Occupant' : 'Main Vendor');
       console.log('Database password hash:', expectedHash);
       console.log('Generated password hash:', passwordHash);
@@ -68,7 +68,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       // Verify password hash
       if (expectedHash !== passwordHash) {
         Alert.alert(
-          'Login Failed', 
+          'Login Failed',
           `Invalid username or password.\n\nDebug Info:\nEntered password: ${password}\nGenerated hash: ${passwordHash.substring(0, 20)}...\nStored hash: ${expectedHash?.substring(0, 20) || 'null'}...\n\nPlease contact admin if this persists.`
         );
         return;
@@ -120,8 +120,8 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       'Password reset functionality is currently unavailable. Please contact support for assistance with password recovery.',
       [
         { text: 'OK' },
-        { 
-          text: 'Contact Support', 
+        {
+          text: 'Contact Support',
           onPress: () => {
             // You can add contact support functionality here
             Alert.alert('Contact Support', 'Please email support@mapalengke.com or call +63-xxx-xxxx for password reset assistance.');

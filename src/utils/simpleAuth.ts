@@ -5,7 +5,7 @@ import { sha256 } from 'js-sha256';
 
 export function simpleHashPassword(password: string): string {
   console.log('Hashing password:', password);
-  
+
   try {
     // Use the js-sha256 library for proper SHA-256 hashing
     const hash = sha256(password);

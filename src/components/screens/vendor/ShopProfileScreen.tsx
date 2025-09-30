@@ -28,7 +28,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  
+
   // Get the current session to show logged-in user's info
   const session = SessionManager.getSession();
   const [formData, setFormData] = useState({
@@ -42,7 +42,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
     const fetchVendorProfile = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         // Get the current logged-in vendor from session
         const session = SessionManager.getSession();
@@ -74,7 +74,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
             .select('stall_number, location_description')
             .eq('vendor_profile_id', vendorData.id)
             .maybeSingle();
-          
+
           stallData = stalls;
         }
 
@@ -96,7 +96,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         console.error('Error fetching vendor profile:', err);
         setError('Failed to load profile data');
       }
-      
+
       setLoading(false);
     };
 
@@ -162,7 +162,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
     <ScrollView style={styles.container}>
       {/* Header with Back Button */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
@@ -173,7 +173,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       {/* Profile Picture Section */}
       <View style={styles.profilePictureSection}>
         <View style={styles.profilePictureContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.profilePicture}
             onPress={handleImagePicker}
             disabled={!isEditing}
@@ -187,7 +187,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
             )}
           </TouchableOpacity>
           {isEditing && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.editIconButton}
               onPress={handleImagePicker}
             >
@@ -207,7 +207,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.label}>Logged in as</Text>
           <View style={styles.readOnlyInput}>
             <Text style={styles.readOnlyText}>
-              {session?.firstName} {session?.lastName} 
+              {session?.firstName} {session?.lastName}
               {session?.isActualOccupant ? ' (Actual Occupant)' : ' (Vendor)'}
             </Text>
           </View>
@@ -234,7 +234,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           <TextInput
             style={[styles.input, !isEditing && styles.inputDisabled]}
             value={formData.businessName}
-            onChangeText={(text) => setFormData({...formData, businessName: text})}
+            onChangeText={(text) => setFormData({ ...formData, businessName: text })}
             placeholder="Enter business name"
             editable={isEditing}
           />
@@ -245,7 +245,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           <TextInput
             style={[styles.input, !isEditing && styles.inputDisabled]}
             value={formData.contactNo}
-            onChangeText={(text) => setFormData({...formData, contactNo: text})}
+            onChangeText={(text) => setFormData({ ...formData, contactNo: text })}
             placeholder="Enter contact number"
             keyboardType="phone-pad"
             editable={isEditing}
@@ -257,14 +257,14 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           <TextInput
             style={[styles.input, !isEditing && styles.inputDisabled]}
             value={formData.operatingHours}
-            onChangeText={(text) => setFormData({...formData, operatingHours: text})}
+            onChangeText={(text) => setFormData({ ...formData, operatingHours: text })}
             placeholder="Enter operating hours"
             editable={isEditing}
           />
         </View>
 
         {/* Save/Edit Toggle Button */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.saveButton}
           onPress={() => setIsEditing(!isEditing)}
         >
