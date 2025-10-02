@@ -69,7 +69,13 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         console.log('Fetching vendor data for ID:', session.vendorId);
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
-          .select('*')
+          .select(`
+            *,
+            market_sections (
+              id,
+              name
+            )
+          `)
           .eq('id', session.vendorId)
           .single();
 

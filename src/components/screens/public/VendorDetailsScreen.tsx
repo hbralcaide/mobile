@@ -42,7 +42,7 @@ interface VendorInfo {
 }
 
 const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { vendorId, vendorName } = route.params;
+    const { vendorId, vendorName: _vendorName } = route.params;
     const [vendor, setVendor] = useState<VendorInfo | null>(null);
     const [products, setProducts] = useState<VendorProduct[]>([]);
     const [filteredProducts, setFilteredProducts] = useState<VendorProduct[]>([]);

@@ -10,13 +10,7 @@ import { SessionManager } from '../../../utils/sessionManager';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductManagement'>;
 
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  base_price: number;
-  image_url?: string;
-}
+// Removed unused Product interface
 
 const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const [products, setProducts] = useState<any[]>([]);
@@ -25,6 +19,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editProduct, setEditProduct] = useState<any | null>(null);
   const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [productInput, setProductInput] = useState('');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [categoryInput, setCategoryInput] = useState('');
@@ -35,22 +30,203 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const uomOptions = ['kg', 'piece', 'pack'];
   const [saving, setSaving] = useState(false);
 
-  // Predefined product names for fish category with prices
-  const fishProductNames = [
-    { name: 'Barracuda / Barakuda', price: '25' },
-    { name: 'Croaker / Alakaak', price: '30' },
-    { name: 'Emperor Snapper / Bitlya', price: '45' },
-    { name: 'Espada Fish / Diwit', price: '35' },
-    { name: 'Frigate Tuna / Tulingan', price: '40' },
-    { name: 'Grouper / Lapu-Lapu', price: '55' },
-    { name: 'Mackerel / Alumahan', price: '20' },
-    { name: 'Milkfish / Bangus', price: '15' },
-    { name: 'Pompano / Pampano', price: '50' },
-    { name: 'Red Snapper / Maya-maya', price: '60' },
-    { name: 'Sardines / Sardinas', price: '12' },
-    { name: 'Tilapia / Tilapya', price: '18' },
-    { name: 'Yellowfin Tuna / Tambakol', price: '65' }
-  ];
+  // Helper function to get vendor's market section category
+  const getVendorCategory = () => {
+    // First priority: market_sections.name from the joined data
+    if (currentVendorProfile?.market_sections?.name) {
+      return currentVendorProfile.market_sections.name;
+    }
+    
+    // Second priority: category field in vendor profile
+    if (currentVendorProfile?.category) {
+      return currentVendorProfile.category;
+    }
+    
+    // Third priority: infer from business name
+    const businessName = currentVendorProfile?.business_name?.toLowerCase() || '';
+    if (businessName.includes('fish') || businessName.includes('isda')) {
+      return 'Fish';
+    }
+    if (businessName.includes('meat') || businessName.includes('karne')) {
+      return 'Meat';
+    }
+    if (businessName.includes('vegetable') || businessName.includes('gulay')) {
+      return 'Vegetables';
+    }
+    if (businessName.includes('fruit') || businessName.includes('prutas')) {
+      return 'Fruits';
+    }
+    
+    // Default fallback
+    return 'General';
+  };
+
+  // Helper function to get filtered product categories based on vendor's market section
+  const getFilteredCategories = () => {
+    const vendorSection = getVendorCategory().toLowerCase();
+    
+    // Filter categories based on vendor's market section
+    return categories.filter(category => {
+      const categoryName = category.name.toLowerCase();
+      
+      // If vendor is in meat section, show meat-related categories
+      if (vendorSection.includes('meat') || vendorSection.includes('karne')) {
+        return categoryName.includes('beef') || 
+               categoryName.includes('chicken') || 
+               categoryName.includes('pork') || 
+               categoryName.includes('meat') ||
+               categoryName.includes('karne');
+      }
+      
+      // If vendor is in fish section, show fish-related categories
+      if (vendorSection.includes('fish') || vendorSection.includes('isda')) {
+        return categoryName.includes('fish') || 
+               categoryName.includes('isda') ||
+               categoryName.includes('seafood');
+      }
+      
+      // If vendor is in vegetable section, show vegetable-related categories
+      if (vendorSection.includes('vegetable') || vendorSection.includes('gulay')) {
+        return categoryName.includes('vegetable') || 
+               categoryName.includes('gulay') ||
+               categoryName.includes('leafy') ||
+               categoryName.includes('root');
+      }
+      
+      // If vendor is in fruit section, show fruit-related categories
+      if (vendorSection.includes('fruit') || vendorSection.includes('prutas')) {
+        return categoryName.includes('fruit') || 
+               categoryName.includes('prutas') ||
+               categoryName.includes('citrus') ||
+               categoryName.includes('tropical');
+      }
+      
+      // For other sections, show all categories
+      return true;
+    });
+  };
+
+  // Comprehensive product database organized by category
+  const productDatabase = {
+    // Beef products
+    beef: [
+      { name: 'Beef Tenderloin / Filet Mignon', price: '450', uom: 'kg' },
+      { name: 'Beef Sirloin / Kasim', price: '380', uom: 'kg' },
+      { name: 'Beef Ribeye / Rib Eye', price: '420', uom: 'kg' },
+      { name: 'Beef Chuck / Batok', price: '320', uom: 'kg' },
+      { name: 'Beef Brisket / Puntay', price: '350', uom: 'kg' },
+      { name: 'Beef Shank / Pata', price: '280', uom: 'kg' },
+      { name: 'Beef Short Ribs / Tadyang', price: '400', uom: 'kg' },
+      { name: 'Beef Ground / Giniling', price: '300', uom: 'kg' },
+      { name: 'Beef Liver / Atay', price: '180', uom: 'kg' },
+      { name: 'Beef Kidney / Bato', price: '160', uom: 'kg' }
+    ],
+    // Pork products
+    pork: [
+      { name: 'Pork Belly / Liempo', price: '280', uom: 'kg' },
+      { name: 'Pork Shoulder / Kasim', price: '250', uom: 'kg' },
+      { name: 'Pork Loin / Lomo', price: '320', uom: 'kg' },
+      { name: 'Pork Chops / Costillas', price: '300', uom: 'kg' },
+      { name: 'Pork Ribs / Tadyang', price: '290', uom: 'kg' },
+      { name: 'Pork Ham / Pigue', price: '270', uom: 'kg' },
+      { name: 'Pork Ground / Giniling', price: '240', uom: 'kg' },
+      { name: 'Pork Liver / Atay', price: '120', uom: 'kg' },
+      { name: 'Pork Kidney / Bato', price: '100', uom: 'kg' },
+      { name: 'Pork Ears / Tainga', price: '80', uom: 'kg' },
+      { name: 'Pork Feet / Pata', price: '90', uom: 'kg' },
+      { name: 'Pork Blood / Dugo', price: '40', uom: 'kg' }
+    ],
+    // Chicken products
+    chicken: [
+      { name: 'Whole Chicken / Buong Manok', price: '180', uom: 'kg' },
+      { name: 'Chicken Breast / Pecho', price: '220', uom: 'kg' },
+      { name: 'Chicken Thigh / Hita', price: '200', uom: 'kg' },
+      { name: 'Chicken Wings / Pakpak', price: '160', uom: 'kg' },
+      { name: 'Chicken Drumstick / Binti', price: '190', uom: 'kg' },
+      { name: 'Chicken Liver / Atay', price: '120', uom: 'kg' },
+      { name: 'Chicken Gizzard / Balunbalunan', price: '100', uom: 'kg' },
+      { name: 'Chicken Feet / Paa', price: '80', uom: 'kg' },
+      { name: 'Chicken Head / Ulo', price: '40', uom: 'kg' },
+      { name: 'Chicken Neck / Leeg', price: '60', uom: 'kg' }
+    ],
+    // Fish products
+    fish: [
+      { name: 'Barracuda / Barakuda', price: '25', uom: 'kg' },
+      { name: 'Croaker / Alakaak', price: '30', uom: 'kg' },
+      { name: 'Emperor Snapper / Bitlya', price: '45', uom: 'kg' },
+      { name: 'Espada Fish / Diwit', price: '35', uom: 'kg' },
+      { name: 'Frigate Tuna / Tulingan', price: '40', uom: 'kg' },
+      { name: 'Grouper / Lapu-Lapu', price: '55', uom: 'kg' },
+      { name: 'Mackerel / Alumahan', price: '20', uom: 'kg' },
+      { name: 'Milkfish / Bangus', price: '15', uom: 'kg' },
+      { name: 'Pompano / Pampano', price: '50', uom: 'kg' },
+      { name: 'Red Snapper / Maya-maya', price: '60', uom: 'kg' },
+      { name: 'Sardines / Sardinas', price: '12', uom: 'kg' },
+      { name: 'Tilapia / Tilapya', price: '18', uom: 'kg' },
+      { name: 'Yellowfin Tuna / Tambakol', price: '65', uom: 'kg' }
+    ],
+    // Vegetable products
+    vegetables: [
+      { name: 'Tomato / Kamatis', price: '40', uom: 'kg' },
+      { name: 'Onion / Sibuyas', price: '35', uom: 'kg' },
+      { name: 'Garlic / Bawang', price: '80', uom: 'kg' },
+      { name: 'Carrot / Karot', price: '45', uom: 'kg' },
+      { name: 'Potato / Patatas', price: '30', uom: 'kg' },
+      { name: 'Cabbage / Repolyo', price: '25', uom: 'kg' },
+      { name: 'Lettuce / Litsugas', price: '50', uom: 'kg' },
+      { name: 'Spinach / Kangkong', price: '20', uom: 'kg' },
+      { name: 'Eggplant / Talong', price: '30', uom: 'kg' },
+      { name: 'Okra / Okra', price: '35', uom: 'kg' },
+      { name: 'String Beans / Sitaw', price: '25', uom: 'kg' },
+      { name: 'Bitter Gourd / Ampalaya', price: '40', uom: 'kg' }
+    ],
+    // Fruit products
+    fruits: [
+      { name: 'Banana / Saging', price: '25', uom: 'kg' },
+      { name: 'Mango / Mangga', price: '60', uom: 'kg' },
+      { name: 'Apple / Mansanas', price: '80', uom: 'kg' },
+      { name: 'Orange / Dalandan', price: '45', uom: 'kg' },
+      { name: 'Pineapple / Pinya', price: '35', uom: 'kg' },
+      { name: 'Watermelon / Pakwan', price: '20', uom: 'kg' },
+      { name: 'Papaya / Papaya', price: '30', uom: 'kg' },
+      { name: 'Grapes / Ubas', price: '120', uom: 'kg' },
+      { name: 'Strawberry / Presas', price: '200', uom: 'kg' },
+      { name: 'Avocado / Abokado', price: '80', uom: 'kg' }
+    ]
+  };
+
+  // Helper function to get filtered products based on selected category
+  const getFilteredProducts = () => {
+    if (!form.category_id) {
+      return [];
+    }
+
+    // Get the selected category name
+    const selectedCategory = categories.find(cat => cat.id === form.category_id);
+    if (!selectedCategory) {
+      return [];
+    }
+
+    const categoryName = selectedCategory.name.toLowerCase();
+
+    // Map category names to product database keys
+    if (categoryName.includes('beef')) {
+      return productDatabase.beef;
+    } else if (categoryName.includes('pork')) {
+      return productDatabase.pork;
+    } else if (categoryName.includes('chicken')) {
+      return productDatabase.chicken;
+    } else if (categoryName.includes('fish') || categoryName.includes('isda')) {
+      return productDatabase.fish;
+    } else if (categoryName.includes('vegetable') || categoryName.includes('gulay')) {
+      return productDatabase.vegetables;
+    } else if (categoryName.includes('fruit') || categoryName.includes('prutas')) {
+      return productDatabase.fruits;
+    }
+
+    // Default: return all products if category doesn't match
+    return Object.values(productDatabase).flat();
+  };
 
   // Test network connectivity to Supabase
   const testConnection = async () => {
@@ -75,10 +251,16 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      // Get the vendor profile using the session vendorId
+      // Get the vendor profile using the session vendorId with market section data
       const { data: vendorData, error: vendorError } = await supabase
         .from('vendor_profiles')
-        .select('*')
+        .select(`
+          *,
+          market_sections (
+            id,
+            name
+          )
+        `)
         .eq('id', session.vendorId)
         .single(); if (vendorError) {
           console.error('Error fetching vendor profile:', vendorError);
@@ -118,7 +300,12 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
           *,
           products (
             name,
-            description
+            description,
+            category_id,
+            product_categories (
+              id,
+              name
+            )
           )
         `)
         .eq('vendor_id', vendorProfile.id)
@@ -186,32 +373,40 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Show product dropdown when category is selected
+  useEffect(() => {
+    if (form.category_id) {
+      const filteredProducts = getFilteredProducts();
+      if (filteredProducts.length > 0) {
+        setShowProductNameDropdown(true);
+      }
+    }
+  }, [form.category_id]);
+
   const openAddModal = () => {
     setEditProduct(null);
 
-    // Infer category from business name if no market section assigned
-    const inferredCategory = currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'General';
+    // Set default category if available
+    const filteredCategories = getFilteredCategories();
+    const defaultCategoryId = filteredCategories.length > 0 ? filteredCategories[0].id : '';
 
     setForm({
       name: '',
       price: '',
-      category_id: '',
+      category_id: defaultCategoryId,
       uom: '',
       status: 'Available'
     });
-    setCategoryInput(
-      currentVendorProfile?.market_sections?.name ||
-      currentVendorProfile?.category ||
-      inferredCategory
-    );
+    setCategoryInput(getVendorCategory());
+    // Reset all dropdown states
+    setShowProductNameDropdown(false);
+    setShowUomDropdown(false);
+    setShowCategoryDropdown(false);
     setModalVisible(true);
   };
 
   const openEditModal = (vendorProduct: any) => {
     setEditProduct(vendorProduct);
-
-    // Infer category from business name if no market section assigned
-    const inferredCategory = currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'General';
 
     setForm({
       name: vendorProduct.products?.name || '',
@@ -220,11 +415,11 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
       uom: vendorProduct.uom || '',
       status: vendorProduct.status === 'available' ? 'Available' : 'Unavailable'
     });
-    setCategoryInput(
-      currentVendorProfile?.market_sections?.name ||
-      currentVendorProfile?.category ||
-      inferredCategory
-    );
+    setCategoryInput(getVendorCategory());
+    // Reset all dropdown states
+    setShowProductNameDropdown(false);
+    setShowUomDropdown(false);
+    setShowCategoryDropdown(false);
     setModalVisible(true);
   };
 
@@ -256,8 +451,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      if (!form.name || !form.price || !form.uom) {
-        Alert.alert('Error', 'Product name, price, and unit of measurement are required.');
+      if (!form.name || !form.price || !form.uom || !form.category_id) {
+        Alert.alert('Error', 'Product name, price, unit of measurement, and category are required.');
         setSaving(false);
         return;
       }
@@ -299,7 +494,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
           .from('products')
           .insert({
             name: form.name,
-            description: `${form.name} - Fresh fish product`
+            description: `${form.name} - Fresh product`,
+            category_id: form.category_id || null
           })
           .select('id')
           .single();
@@ -380,7 +576,12 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <View style={[styles.productRow, item.status === 'unavailable' && styles.productRowUnavailable]}>
-            <Text style={styles.productName}>{item.products?.name}</Text>
+            <View style={styles.productInfo}>
+              <Text style={styles.productName}>{item.products?.name}</Text>
+              <Text style={styles.productCategory}>
+                {item.products?.product_categories?.name || 'No Category'}
+              </Text>
+            </View>
             <Text style={styles.productPrice}>{item.price}/{item.uom || 'piece'}</Text>
             <Text style={[styles.statusBadge, item.status === 'available' ? styles.statusActive : styles.statusInactive]}>
               {item.status === 'available' ? 'Available' : 'Unavailable'}
@@ -413,6 +614,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
           onPress={() => {
             setShowProductNameDropdown(false);
             setShowUomDropdown(false);
+            setShowCategoryDropdown(false);
+            setModalVisible(false);
           }}
         >
           <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => { }}>
@@ -420,14 +623,54 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.imagePlaceholder} />
 
             <View style={styles.fieldRowVertical}>
-              <Text style={styles.fieldLabelVertical}>Category:</Text>
-              <View style={styles.readOnlyInput}>
-                <Text style={styles.readOnlyText}>
-                  {currentVendorProfile?.market_sections?.name ||
-                    currentVendorProfile?.category ||
-                    (currentVendorProfile?.business_name?.toLowerCase().includes('fish') ? 'Fish' : 'Pending Assignment')}
-                </Text>
+              <Text style={styles.fieldLabelVertical}>Product Category:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity
+                  style={styles.inputVertical}
+                  onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                >
+                  <Text style={[styles.dropdownPlaceholder, form.category_id && styles.dropdownSelected]}>
+                    {form.category_id ? 
+                      categories.find(cat => cat.id === form.category_id)?.name || 'Select category' : 
+                      'Select category'
+                    }
+                  </Text>
+                </TouchableOpacity>
+                {showCategoryDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    <ScrollView
+                      style={styles.scrollableContainer}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {getFilteredCategories().map(category => (
+                        <TouchableOpacity
+                          key={category.id}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setForm(f => ({ 
+                              ...f, 
+                              category_id: category.id,
+                              name: '', // Reset product name when category changes
+                              price: '', // Reset price when category changes
+                              uom: '' // Reset UOM when category changes
+                            }));
+                            setShowCategoryDropdown(false);
+                            // Show product dropdown immediately when category is selected
+                            setShowProductNameDropdown(true);
+                          }}
+                        >
+                          <Text style={styles.dropdownItemText}>{category.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
+              <Text style={styles.categoryHint}>
+                Market Section: {getVendorCategory()}
+              </Text>
             </View>
 
             <View style={styles.fieldRowVertical}>
@@ -435,13 +678,24 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
               <View style={styles.dropdownContainer}>
                 <TextInput
                   style={styles.inputVertical}
-                  placeholder="Select product name"
+                  placeholder={form.category_id ? "Select from list below or type to filter" : "Select a category first"}
                   value={form.name}
+                  editable={!!form.category_id}
                   onChangeText={text => {
                     setForm(f => ({ ...f, name: text }));
-                    setShowProductNameDropdown(true);
+                    // Show dropdown if there are products available (regardless of text length)
+                    const filteredProducts = getFilteredProducts();
+                    setShowProductNameDropdown(filteredProducts.length > 0);
                   }}
-                  onFocus={() => setShowProductNameDropdown(true)}
+                  onFocus={() => {
+                    // Show dropdown if there are products available
+                    const filteredProducts = getFilteredProducts();
+                    setShowProductNameDropdown(filteredProducts.length > 0);
+                  }}
+                  onBlur={() => {
+                    // Hide dropdown when input loses focus
+                    setTimeout(() => setShowProductNameDropdown(false), 150);
+                  }}
                   autoCorrect={false}
                   autoCapitalize="words"
                 />
@@ -453,9 +707,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
                       nestedScrollEnabled={true}
                       keyboardShouldPersistTaps="handled"
                     >
-                      {fishProductNames.filter(productItem =>
-                        form.name.length === 0 ||
-                        productItem.name.toLowerCase().includes(form.name.toLowerCase())
+                      {getFilteredProducts().filter(productItem =>
+                        form.name.length === 0 || productItem.name.toLowerCase().includes(form.name.toLowerCase())
                       ).map((productItem, index) => (
                         <TouchableOpacity
                           key={index}
@@ -465,13 +718,14 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
                             setForm(f => ({
                               ...f,
                               name: productItem.name,
-                              price: productItem.price
+                              price: productItem.price,
+                              uom: productItem.uom || 'kg'
                             }));
                             setShowProductNameDropdown(false);
                           }}
                           activeOpacity={0.7}
                         >
-                          <Text style={styles.dropdownItemText}>{productItem.name} - ₱{productItem.price}/kg</Text>
+                          <Text style={styles.dropdownItemText}>{productItem.name} - ₱{productItem.price}/{productItem.uom || 'kg'}</Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
@@ -871,10 +1125,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
   },
+  productInfo: {
+    flex: 1,
+    flexDirection: 'column',
+  },
   productName: {
     fontSize: 16,
     color: '#222',
-    flex: 1,
+    fontWeight: '500',
+  },
+  productCategory: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
   productPrice: {
     fontSize: 16,
@@ -1047,6 +1310,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  categoryHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 });
 

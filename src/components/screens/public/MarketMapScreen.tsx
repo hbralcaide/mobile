@@ -46,7 +46,9 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   // Simple scroll state - no zoom functionality
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const SCALED_MAP_WIDTH = containerWidth;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const SCALED_MAP_HEIGHT = containerHeight;
 
   // State for UI
