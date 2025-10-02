@@ -1,0 +1,1411 @@
+//Product Management screen
+
+
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../../navigation/types';
+import { supabase } from '../../../services/supabase';
+import { SessionManager } from '../../../utils/sessionManager';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'ProductManagement'>;
+
+// Removed unused Product interface
+
+const ProductManagementScreen: React.FC<Props> = ({ navigation }) => {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editProduct, setEditProduct] = useState<any | null>(null);
+  const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [productInput, setProductInput] = useState('');
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [categoryInput, setCategoryInput] = useState('');
+  const [showUomDropdown, setShowUomDropdown] = useState(false);
+  const [showProductNameDropdown, setShowProductNameDropdown] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [currentVendorProfile, setCurrentVendorProfile] = useState<any | null>(null);
+  const [availableProducts, setAvailableProducts] = useState<any[]>([]);
+  const uomOptions = ['kg', 'piece', 'pack'];
+  const [saving, setSaving] = useState(false);
+
+  // Helper function to get vendor's market section category
+  const getVendorCategory = () => {
+    // First priority: market_sections.name from the joined data
+    if (currentVendorProfile?.market_sections?.name) {
+      return currentVendorProfile.market_sections.name;
+    }
+    
+    // Second priority: category field in vendor profile
+    if (currentVendorProfile?.category) {
+      return currentVendorProfile.category;
+    }
+    
+    // Third priority: infer from business name
+    const businessName = currentVendorProfile?.business_name?.toLowerCase() || '';
+    if (businessName.includes('fish') || businessName.includes('isda')) {
+      return 'Fish';
+    }
+    if (businessName.includes('meat') || businessName.includes('karne')) {
+      return 'Meat';
+    }
+    if (businessName.includes('vegetable') || businessName.includes('gulay')) {
+      return 'Vegetables';
+    }
+    if (businessName.includes('fruit') || businessName.includes('prutas')) {
+      return 'Fruits';
+    }
+    if (businessName.includes('grocery') || businessName.includes('grocery')) {
+      return 'Grocery';
+    }
+    
+    // Default fallback
+    return 'General';
+  };
+
+  // Helper function to get filtered product categories based on vendor's market section
+  const getFilteredCategories = () => {
+    const vendorSection = getVendorCategory().toLowerCase();
+    
+    // If vendor is in grocery section, show only grocery category
+    if (vendorSection.includes('grocery')) {
+      return categories.filter(category => 
+        category.name.toLowerCase().includes('grocery')
+      );
+    }
+    
+    // Filter categories based on vendor's market section
+    return categories.filter(category => {
+      const categoryName = category.name.toLowerCase();
+      
+      // If vendor is in meat section, show meat subcategories (Beef, Pork, Chicken)
+      if (vendorSection.includes('meat') || vendorSection.includes('karne')) {
+        return categoryName.includes('beef') || 
+               categoryName.includes('chicken') || 
+               categoryName.includes('pork');
+      }
+      
+      // If vendor is in fish section, show fish-related categories
+      if (vendorSection.includes('fish') || vendorSection.includes('isda')) {
+        return categoryName.includes('fish') || 
+               categoryName.includes('isda') ||
+               categoryName.includes('seafood');
+      }
+      
+      // If vendor is in vegetable section, show vegetable-related categories
+      if (vendorSection.includes('vegetable') || vendorSection.includes('gulay')) {
+        return categoryName.includes('vegetable') || 
+               categoryName.includes('gulay') ||
+               categoryName.includes('leafy') ||
+               categoryName.includes('root');
+      }
+      
+      // If vendor is in fruit section, show fruit-related categories
+      if (vendorSection.includes('fruit') || vendorSection.includes('prutas')) {
+        return categoryName.includes('fruit') || 
+               categoryName.includes('prutas') ||
+               categoryName.includes('citrus') ||
+               categoryName.includes('tropical');
+      }
+      
+      // For other sections, show all categories
+      return true;
+    });
+  };
+
+  // Helper function to get the appropriate category ID for the vendor's market section
+  const getAutoCategoryId = () => {
+    const vendorSection = getVendorCategory().toLowerCase();
+    
+    // If vendor is in grocery section, automatically select grocery category
+    if (vendorSection.includes('grocery')) {
+      const groceryCategory = categories.find(category => 
+        category.name.toLowerCase().includes('grocery')
+      );
+      return groceryCategory?.id || null;
+    }
+    
+    // For meat vendors, don't auto-select - let them choose subcategory (Beef, Pork, Chicken)
+    // For other sections, return null (let user choose)
+    return null;
+  };
+
+  // Product database removed - now using Supabase products table
+      { name: 'Beef Sirloin / Kasim', price: '380', uom: 'kg' },
+      { name: 'Beef Ribeye / Rib Eye', price: '420', uom: 'kg' },
+      { name: 'Beef Chuck / Batok', price: '320', uom: 'kg' },
+      { name: 'Beef Brisket / Puntay', price: '350', uom: 'kg' },
+      { name: 'Beef Shank / Pata', price: '280', uom: 'kg' },
+      { name: 'Beef Short Ribs / Tadyang', price: '400', uom: 'kg' },
+      { name: 'Beef Ground / Giniling', price: '300', uom: 'kg' },
+      { name: 'Beef Liver / Atay', price: '180', uom: 'kg' },
+      { name: 'Beef Kidney / Bato', price: '160', uom: 'kg' }
+    ],
+    // Pork products
+    pork: [
+      { name: 'Pork Belly / Liempo', price: '280', uom: 'kg' },
+      { name: 'Pork Shoulder / Kasim', price: '250', uom: 'kg' },
+      { name: 'Pork Loin / Lomo', price: '320', uom: 'kg' },
+      { name: 'Pork Chops / Costillas', price: '300', uom: 'kg' },
+      { name: 'Pork Ribs / Tadyang', price: '290', uom: 'kg' },
+      { name: 'Pork Ham / Pigue', price: '270', uom: 'kg' },
+      { name: 'Pork Ground / Giniling', price: '240', uom: 'kg' },
+      { name: 'Pork Liver / Atay', price: '120', uom: 'kg' },
+      { name: 'Pork Kidney / Bato', price: '100', uom: 'kg' },
+      { name: 'Pork Ears / Tainga', price: '80', uom: 'kg' },
+      { name: 'Pork Feet / Pata', price: '90', uom: 'kg' },
+      { name: 'Pork Blood / Dugo', price: '40', uom: 'kg' }
+    ],
+    // Chicken products
+    chicken: [
+      { name: 'Whole Chicken / Buong Manok', price: '180', uom: 'kg' },
+      { name: 'Chicken Breast / Pecho', price: '220', uom: 'kg' },
+      { name: 'Chicken Thigh / Hita', price: '200', uom: 'kg' },
+      { name: 'Chicken Wings / Pakpak', price: '160', uom: 'kg' },
+      { name: 'Chicken Drumstick / Binti', price: '190', uom: 'kg' },
+      { name: 'Chicken Liver / Atay', price: '120', uom: 'kg' },
+      { name: 'Chicken Gizzard / Balunbalunan', price: '100', uom: 'kg' },
+      { name: 'Chicken Feet / Paa', price: '80', uom: 'kg' },
+      { name: 'Chicken Head / Ulo', price: '40', uom: 'kg' },
+      { name: 'Chicken Neck / Leeg', price: '60', uom: 'kg' }
+    ],
+    // Fish products
+    fish: [
+      { name: 'Barracuda / Barakuda', price: '25', uom: 'kg' },
+      { name: 'Croaker / Alakaak', price: '30', uom: 'kg' },
+      { name: 'Emperor Snapper / Bitlya', price: '45', uom: 'kg' },
+      { name: 'Espada Fish / Diwit', price: '35', uom: 'kg' },
+      { name: 'Frigate Tuna / Tulingan', price: '40', uom: 'kg' },
+      { name: 'Grouper / Lapu-Lapu', price: '55', uom: 'kg' },
+      { name: 'Mackerel / Alumahan', price: '20', uom: 'kg' },
+      { name: 'Milkfish / Bangus', price: '15', uom: 'kg' },
+      { name: 'Pompano / Pampano', price: '50', uom: 'kg' },
+      { name: 'Red Snapper / Maya-maya', price: '60', uom: 'kg' },
+      { name: 'Sardines / Sardinas', price: '12', uom: 'kg' },
+      { name: 'Tilapia / Tilapya', price: '18', uom: 'kg' },
+      { name: 'Yellowfin Tuna / Tambakol', price: '65', uom: 'kg' }
+    ],
+    // Vegetable products
+    vegetables: [
+      { name: 'Tomato / Kamatis', price: '40', uom: 'kg' },
+      { name: 'Onion / Sibuyas', price: '35', uom: 'kg' },
+      { name: 'Garlic / Bawang', price: '80', uom: 'kg' },
+      { name: 'Carrot / Karot', price: '45', uom: 'kg' },
+      { name: 'Potato / Patatas', price: '30', uom: 'kg' },
+      { name: 'Cabbage / Repolyo', price: '25', uom: 'kg' },
+      { name: 'Lettuce / Litsugas', price: '50', uom: 'kg' },
+      { name: 'Spinach / Kangkong', price: '20', uom: 'kg' },
+      { name: 'Eggplant / Talong', price: '30', uom: 'kg' },
+      { name: 'Okra / Okra', price: '35', uom: 'kg' },
+      { name: 'String Beans / Sitaw', price: '25', uom: 'kg' },
+      { name: 'Bitter Gourd / Ampalaya', price: '40', uom: 'kg' }
+    ],
+    // Fruit products
+    fruits: [
+      { name: 'Banana / Saging', price: '25', uom: 'kg' },
+      { name: 'Mango / Mangga', price: '60', uom: 'kg' },
+      { name: 'Apple / Mansanas', price: '80', uom: 'kg' },
+      { name: 'Orange / Dalandan', price: '45', uom: 'kg' },
+      { name: 'Pineapple / Pinya', price: '35', uom: 'kg' },
+      { name: 'Watermelon / Pakwan', price: '20', uom: 'kg' },
+      { name: 'Papaya / Papaya', price: '30', uom: 'kg' },
+      { name: 'Grapes / Ubas', price: '120', uom: 'kg' },
+      { name: 'Strawberry / Presas', price: '200', uom: 'kg' },
+      { name: 'Avocado / Abokado', price: '80', uom: 'kg' }
+    ],
+    // Grocery products
+    grocery: [
+      { name: 'Rice / Bigas', price: '45', uom: 'kg' },
+      { name: 'Sugar / Asukal', price: '55', uom: 'kg' },
+      { name: 'Salt / Asin', price: '15', uom: 'kg' },
+      { name: 'Cooking Oil / Mantika', price: '85', uom: 'L' },
+      { name: 'Soy Sauce / Toyo', price: '25', uom: 'L' },
+      { name: 'Vinegar / Suka', price: '20', uom: 'L' },
+      { name: 'Fish Sauce / Patis', price: '30', uom: 'L' },
+      { name: 'Coconut Milk / Gata', price: '35', uom: 'L' },
+      { name: 'Instant Noodles / Pancit Canton', price: '12', uom: 'pack' },
+      { name: 'Bread / Tinapay', price: '25', uom: 'piece' },
+      { name: 'Eggs / Itlog', price: '8', uom: 'piece' },
+      { name: 'Milk / Gatas', price: '65', uom: 'L' },
+      { name: 'Coffee / Kape', price: '120', uom: 'kg' },
+      { name: 'Tea / Tsaa', price: '80', uom: 'kg' },
+      { name: 'Canned Goods / De Lata', price: '35', uom: 'piece' },
+      { name: 'Spices / Pampalasa', price: '45', uom: 'kg' },
+      { name: 'Flour / Harina', price: '40', uom: 'kg' },
+      { name: 'Cornstarch / Gawgaw', price: '50', uom: 'kg' }
+    ]
+  // };
+
+  // Function to fetch products from Supabase based on category
+  const fetchProductsByCategory = async (categoryId: string) => {
+    try {
+      console.log('Fetching products for category:', categoryId);
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('category_id', categoryId)
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching products:', error);
+        return [];
+      }
+
+      console.log('Products fetched from Supabase:', data?.length || 0);
+      return data || [];
+    } catch (err) {
+      console.error('Network error fetching products:', err);
+      return [];
+    }
+  };
+
+  // Helper function to get filtered products based on selected category
+  const getFilteredProducts = () => {
+    if (!form.category_id) {
+      return [];
+    }
+
+    // Return products from Supabase that match the selected category
+    return availableProducts.filter(product => product.category_id === form.category_id);
+  };
+
+  // Test network connectivity to Supabase
+  const testConnection = async () => {
+    try {
+      console.log('Testing connection to Supabase...');
+      const { data, error: connError } = await supabase.from('product_categories').select('count').limit(1);
+      console.log('Connection test result:', { data, error: connError });
+      return !connError;
+    } catch (err) {
+      console.error('Connection test failed:', err);
+      return false;
+    }
+  };
+
+  // Get current vendor profile
+  const getCurrentVendorProfile = async () => {
+    try {
+      // Get the current logged-in vendor from session
+      const session = SessionManager.getSession();
+      if (!session) {
+        Alert.alert('Error', 'Please login to manage products');
+        return;
+      }
+
+      // Get the vendor profile using the session vendorId with market section data
+      const { data: vendorData, error: vendorError } = await supabase
+        .from('vendor_profiles')
+        .select(`
+          *,
+          market_sections (
+            id,
+            name
+          )
+        `)
+        .eq('id', session.vendorId)
+        .single(); if (vendorError) {
+          console.error('Error fetching vendor profile:', vendorError);
+          return null;
+        }
+
+      // Debug: Log the vendor profile data to see what we're getting
+      console.log('Vendor Profile Data:', JSON.stringify(vendorData, null, 2));
+
+      setCurrentVendorProfile(vendorData);
+      return vendorData;
+    } catch (err) {
+      console.error('Error getting current vendor:', err);
+      return null;
+    }
+  };
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('Attempting to fetch vendor products from Supabase...');
+
+      // Get current vendor profile first
+      const vendorProfile = currentVendorProfile || await getCurrentVendorProfile();
+      if (!vendorProfile) {
+        setError('Unable to load vendor profile. Please login again.');
+        setProducts([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data, error: prodError } = await supabase
+        .from('vendor_products')
+        .select(`
+          *,
+          products (
+            name,
+            description,
+            category_id,
+            product_categories (
+              id,
+              name
+            )
+          )
+        `)
+        .eq('vendor_id', vendorProfile.id)
+        .order('created_at', { ascending: false });
+
+      console.log('Supabase response:', { data, error: prodError, count: data?.length });
+
+      if (prodError) {
+        console.error('Supabase error details:', prodError);
+        setError(`Failed to load products: ${prodError.message}`);
+        setProducts([]);
+      } else {
+        console.log('Products fetched successfully:', data?.length || 0, 'items');
+        setProducts(data || []);
+
+        // Debug: Log each product
+        if (data && data.length > 0) {
+          console.log('Product details:');
+          data.forEach((product, index) => {
+            console.log(`${index + 1}:`, product.products?.name, '- Price:', product.price, '- Status:', product.status);
+          });
+        }
+      }
+    } catch (networkError) {
+      console.error('Network error details:', networkError);
+      setError('Network connection failed. Please check your internet connection.');
+      setProducts([]);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      // Test connection first
+      testConnection();
+      // Load vendor profile and then products
+      await getCurrentVendorProfile();
+      await fetchProducts();
+    };
+
+    initialize();
+
+    // Fetch categories from Supabase
+    const fetchCategories = async () => {
+      try {
+        console.log('Fetching categories from product_categories table...');
+        const { data, error: catError } = await supabase
+          .from('product_categories')
+          .select('*')
+          .order('name', { ascending: true });
+        if (!catError && data) {
+          console.log('Categories fetched successfully:', data);
+          setCategories(data);
+        } else {
+          console.error('Error fetching categories:', catError);
+          setCategories([]);
+        }
+      } catch (networkError) {
+        console.error('Network error fetching categories:', networkError);
+        setCategories([]);
+      }
+    };
+    fetchCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch all products when component loads
+  useEffect(() => {
+    const fetchAllProducts = async () => {
+      try {
+        console.log('Fetching all products from Supabase...');
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching all products:', error);
+          setAvailableProducts([]);
+        } else {
+          console.log('All products fetched successfully:', data?.length || 0);
+          setAvailableProducts(data || []);
+        }
+      } catch (err) {
+        console.error('Network error fetching all products:', err);
+        setAvailableProducts([]);
+      }
+    };
+
+    fetchAllProducts();
+  }, []);
+
+  // Show product dropdown when category is selected
+  useEffect(() => {
+    if (form.category_id) {
+      const filteredProducts = getFilteredProducts();
+      if (filteredProducts.length > 0) {
+        setShowProductNameDropdown(true);
+      }
+    }
+  }, [form.category_id, availableProducts]);
+
+  // Auto-set category based on vendor's market section
+  useEffect(() => {
+    if (currentVendorProfile && categories.length > 0 && !form.category_id) {
+      const autoCategoryId = getAutoCategoryId();
+      if (autoCategoryId) {
+        console.log('Auto-setting category for grocery vendor:', autoCategoryId);
+        setForm(prev => ({ ...prev, category_id: autoCategoryId }));
+      }
+    }
+  }, [currentVendorProfile, categories, form.category_id]);
+
+  const openAddModal = () => {
+    setEditProduct(null);
+
+    // Auto-set category based on vendor's market section
+    const autoCategoryId = getAutoCategoryId();
+
+    setForm({
+      name: '',
+      price: '',
+      category_id: autoCategoryId || '',
+      uom: '',
+      status: 'Available'
+    });
+    setCategoryInput(getVendorCategory());
+    // Reset all dropdown states
+    setShowProductNameDropdown(false);
+    setShowUomDropdown(false);
+    setShowCategoryDropdown(false);
+    setModalVisible(true);
+  };
+
+  const openEditModal = (vendorProduct: any) => {
+    setEditProduct(vendorProduct);
+
+    setForm({
+      name: vendorProduct.products?.name || '',
+      price: String(vendorProduct.price || ''),
+      category_id: '',
+      uom: vendorProduct.uom || '',
+      status: vendorProduct.status === 'available' ? 'Available' : 'Unavailable'
+    });
+    setCategoryInput(getVendorCategory());
+    // Reset all dropdown states
+    setShowProductNameDropdown(false);
+    setShowUomDropdown(false);
+    setShowCategoryDropdown(false);
+    setModalVisible(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    Alert.alert('Delete Product', 'Are you sure you want to delete this product?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            console.log('Deleting vendor product with ID:', id);
+            const result = await supabase.from('vendor_products').delete().eq('id', id);
+            if (result.error) {
+              console.error('Delete error:', result.error);
+              Alert.alert('Error', 'Failed to delete product.');
+            } else {
+              console.log('Vendor product deleted successfully');
+              Alert.alert('Success', 'Product deleted successfully!');
+              await fetchProducts();
+            }
+          } catch (deleteError) {
+            console.error('Unexpected delete error:', deleteError);
+            Alert.alert('Error', 'An unexpected error occurred while deleting the product.');
+          }
+        }
+      }
+    ]);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (!form.name || !form.price || !form.uom || !form.category_id) {
+        Alert.alert('Error', 'Product name, price, unit of measurement, and category are required.');
+        setSaving(false);
+        return;
+      }
+
+      // Get current vendor profile ID using session
+      const session = SessionManager.getSession();
+      if (!session) {
+        Alert.alert('Error', 'Please login to add products');
+        setSaving(false);
+        return;
+      }
+
+      const { data: vendorProfile } = await supabase
+        .from('vendor_profiles')
+        .select('id')
+        .eq('id', session.vendorId)
+        .single();
+
+      if (!vendorProfile) {
+        Alert.alert('Error', 'Vendor profile not found. Please contact support.');
+        setSaving(false);
+        return;
+      }
+
+      // First, find or create the product in the products table
+      let productId;
+      const { data: existingProduct } = await supabase
+        .from('products')
+        .select('id')
+        .eq('name', form.name)
+        .single();
+
+      if (existingProduct) {
+        productId = existingProduct.id;
+        console.log('Using existing product ID:', productId);
+      } else {
+        // Create new product in products table
+        const { data: newProduct, error: productError } = await supabase
+          .from('products')
+          .insert({
+            name: form.name,
+            description: `${form.name} - Fresh product`,
+            category_id: form.category_id || null
+          })
+          .select('id')
+          .single();
+
+        if (productError || !newProduct) {
+          console.error('Failed to create product:', productError);
+          Alert.alert('Error', 'Failed to create product.');
+          setSaving(false);
+          return;
+        }
+
+        productId = newProduct.id;
+        console.log('Created new product with ID:', productId);
+      }
+
+      // Now create or update the vendor_products record
+      const vendorProductData = {
+        product_id: productId,
+        vendor_id: vendorProfile.id,
+        price: Number(form.price),
+        uom: form.uom,
+        status: form.status === 'Available' ? 'available' : 'unavailable',
+        visibility: true
+      };
+
+      console.log('Saving vendor product data:', vendorProductData);
+
+      let result;
+      if (editProduct) {
+        console.log('Updating vendor product:', editProduct.id);
+        result = await supabase
+          .from('vendor_products')
+          .update(vendorProductData)
+          .eq('id', editProduct.id);
+      } else {
+        console.log('Inserting new vendor product');
+        result = await supabase
+          .from('vendor_products')
+          .insert(vendorProductData);
+      }
+
+      console.log('Save result:', result);
+
+      if (result.error) {
+        console.error('Error saving vendor product:', result.error);
+        Alert.alert('Error', `Failed to ${editProduct ? 'update' : 'create'} product: ${result.error.message}`);
+      } else {
+        Alert.alert('Success', `Product ${editProduct ? 'updated' : 'created'} successfully!`);
+        setModalVisible(false);
+        setCategoryInput('');
+        setForm({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
+        // Refresh the product list
+        await fetchProducts();
+      }
+    } catch (saveError) {
+      console.error('Unexpected error saving product:', saveError);
+      Alert.alert('Error', 'An unexpected error occurred while saving the product.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <View style={styles.centered}><ActivityIndicator size="large" color="#22C55E" /></View>;
+  }
+  if (error) {
+    return <View style={styles.centered}><Text style={styles.errorText}>{error}</Text></View>;
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Product Management</Text>
+      <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
+        <Text style={styles.addBtnText}>+ Add Product</Text>
+      </TouchableOpacity>
+      <FlatList
+        data={products}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <View style={[styles.productRow, item.status === 'unavailable' && styles.productRowUnavailable]}>
+            <View style={styles.productInfo}>
+              <Text style={styles.productName}>{item.products?.name}</Text>
+              <Text style={styles.productCategory}>
+                {item.products?.product_categories?.name || 'No Category'}
+              </Text>
+            </View>
+            <Text style={styles.productPrice}>{item.price}/{item.uom || 'piece'}</Text>
+            <Text style={[styles.statusBadge, item.status === 'available' ? styles.statusActive : styles.statusInactive]}>
+              {item.status === 'available' ? 'Available' : 'Unavailable'}
+            </Text>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
+              <Text style={styles.iconText}>✏️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(item.id)}>
+              <Text style={styles.iconText}>🗑️</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.noProducts}>No products found.</Text>
+            <TouchableOpacity style={styles.refreshBtn} onPress={fetchProducts}>
+              <Text style={styles.refreshBtnText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        refreshing={loading}
+        onRefresh={fetchProducts}
+      />
+
+      {/* Modal for Add/Edit */}
+      <Modal visible={modalVisible} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowProductNameDropdown(false);
+            setShowUomDropdown(false);
+            setShowCategoryDropdown(false);
+            setModalVisible(false);
+          }}
+        >
+          <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => { }}>
+            <Text style={styles.modalTitleCustom}>{editProduct ? 'Edit Product' : 'Add New Product'}</Text>
+            <View style={styles.imagePlaceholder} />
+
+            <View style={styles.fieldRowVertical}>
+              <Text style={styles.fieldLabelVertical}>Product Category:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity
+                  style={[styles.inputVertical, getVendorCategory().toLowerCase().includes('grocery') && styles.inputDisabled]}
+                  onPress={() => {
+                    // Disable category selection only for grocery vendors
+                    if (!getVendorCategory().toLowerCase().includes('grocery')) {
+                      setShowCategoryDropdown(!showCategoryDropdown);
+                    }
+                  }}
+                >
+                  <Text style={[styles.dropdownPlaceholder, form.category_id && styles.dropdownSelected]}>
+                    {form.category_id ? 
+                      categories.find(cat => cat.id === form.category_id)?.name || 'Select category' : 
+                      'Select category'
+                    }
+                  </Text>
+                </TouchableOpacity>
+                {showCategoryDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    <ScrollView
+                      style={styles.scrollableContainer}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {getFilteredCategories().map(category => (
+                        <TouchableOpacity
+                          key={category.id}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setForm(f => ({ 
+                              ...f, 
+                              category_id: category.id,
+                              name: '', // Reset product name when category changes
+                              price: '', // Reset price when category changes
+                              uom: '' // Reset UOM when category changes
+                            }));
+                            setShowCategoryDropdown(false);
+                            // Show product dropdown immediately when category is selected
+                            setShowProductNameDropdown(true);
+                          }}
+                        >
+                          <Text style={styles.dropdownItemText}>{category.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.categoryHint}>
+                Market Section: {getVendorCategory()}
+              </Text>
+            </View>
+
+            <View style={styles.fieldRowVertical}>
+              <Text style={styles.fieldLabelVertical}>Product Name:</Text>
+              <View style={styles.dropdownContainer}>
+                <TextInput
+                  style={styles.inputVertical}
+                  placeholder={form.category_id ? "Select from list below or type to filter" : "Select a category first"}
+                  value={form.name}
+                  editable={!!form.category_id}
+                  onChangeText={text => {
+                    setForm(f => ({ ...f, name: text }));
+                    // Show dropdown if there are products available (regardless of text length)
+                    const filteredProducts = getFilteredProducts();
+                    setShowProductNameDropdown(filteredProducts.length > 0);
+                  }}
+                  onFocus={() => {
+                    // Show dropdown if there are products available
+                    const filteredProducts = getFilteredProducts();
+                    setShowProductNameDropdown(filteredProducts.length > 0);
+                  }}
+                  onBlur={() => {
+                    // Hide dropdown when input loses focus
+                    setTimeout(() => setShowProductNameDropdown(false), 150);
+                  }}
+                  autoCorrect={false}
+                  autoCapitalize="words"
+                />
+                {showProductNameDropdown && (
+                  <View style={styles.dropdownMenuScrollable}>
+                    <ScrollView
+                      style={styles.scrollableContainer}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {getFilteredProducts().filter(productItem =>
+                        form.name.length === 0 || productItem.name.toLowerCase().includes(form.name.toLowerCase())
+                      ).map((productItem, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            console.log('Selected product:', productItem.name);
+                            setForm(f => ({
+                              ...f,
+                              name: productItem.name,
+                              price: '', // Let user set their own price
+                              uom: 'kg' // Default UOM, user can change
+                            }));
+                            setShowProductNameDropdown(false);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.dropdownItemText}>{productItem.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            </View>
+            <View style={styles.fieldRow}><Text style={styles.fieldLabel}>Price:</Text>
+              <View style={styles.priceRow}><Text style={styles.currency}>₱</Text>
+                <TextInput style={styles.inputPrice} placeholder="Price" value={form.price} onChangeText={text => setForm(f => ({ ...f, price: text }))} keyboardType="numeric" /></View></View>
+            <View style={styles.fieldRowVertical}><Text style={styles.fieldLabelVertical}>Unit of Measurement:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity
+                  style={styles.inputVertical}
+                  onPress={() => setShowUomDropdown(!showUomDropdown)}
+                >
+                  <Text style={[styles.dropdownPlaceholder, form.uom && styles.dropdownSelected]}>
+                    {form.uom || 'Select unit'}
+                  </Text>
+                </TouchableOpacity>
+                {showUomDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {uomOptions.map(uom => (
+                      <TouchableOpacity
+                        key={uom}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setForm(f => ({ ...f, uom: uom }));
+                          setShowUomDropdown(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{uom}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View></View>
+            <View style={styles.fieldRowVertical}><Text style={styles.fieldLabelVertical}>Availability:</Text>
+              <View style={styles.dropdownBoxCustom}>
+                {['Available', 'Unavailable'].map(status => (
+                  <TouchableOpacity key={status} style={[styles.dropdownOptionCustom, form.status === status && styles.dropdownSelectedCustom]} onPress={() => setForm(f => ({ ...f, status }))}>
+                    <Text style={form.status === status ? styles.dropdownSelectedTextCustom : styles.dropdownTextCustom}>{status}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View></View>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={saving}>
+              <Text style={styles.submitBtnText}>{saving ? 'Saving...' : 'Submit'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtnCustom} onPress={() => setModalVisible(false)}>
+              <Text style={styles.cancelBtnTextCustom}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  fieldRowVertical: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginBottom: 18,
+    width: '100%',
+  },
+  fieldLabelVertical: {
+    fontSize: 16,
+    color: '#22C55E',
+    fontWeight: 'bold',
+    marginBottom: 8,
+    letterSpacing: 0.2,
+  },
+  inputVertical: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+    width: '100%',
+    color: '#222',
+  },
+  inputDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+    opacity: 0.7,
+  },
+  dropdownContainer: {
+    width: '100%',
+    position: 'relative',
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 48,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    zIndex: 10,
+    maxHeight: 160,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+  },
+  dropdownMenuScrollable: {
+    position: 'absolute',
+    top: 48,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    zIndex: 10,
+    maxHeight: 200,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+  },
+  scrollableContainer: {
+    maxHeight: 200,
+    borderRadius: 12,
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F3F3',
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    color: '#222',
+  },
+  dropdownPlaceholder: {
+    fontSize: 16,
+    color: '#999',
+  },
+  dropdownSelected: {
+    color: '#222',
+  },
+  dropdownListEnhanced: {
+    position: 'absolute',
+    top: 48,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    zIndex: 10,
+    maxHeight: 160,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+  },
+  dropdownListItemEnhanced: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F3F3',
+    backgroundColor: '#fff',
+  },
+  dropdownListItemSelected: {
+    backgroundColor: '#22C55E',
+    color: '#fff',
+  },
+  flex1: {
+    flex: 1,
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    zIndex: 10,
+    maxHeight: 140,
+    elevation: 5,
+  },
+  dropdownListItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  dropdownListText: {
+    fontSize: 15,
+    color: '#222',
+  },
+  pickerWrapper: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 44,
+    width: '100%',
+    color: '#222',
+  },
+  modalCardCustom: {
+    backgroundColor: '#fff',
+    borderRadius: 32,
+    paddingVertical: 36,
+    paddingHorizontal: 32,
+    width: '92%',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.13,
+    shadowRadius: 16,
+  },
+  modalTitleCustom: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: '#22C55E',
+    marginBottom: 24,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  imagePlaceholder: {
+    width: 110,
+    height: 110,
+    backgroundColor: '#F0F4F8',
+    borderRadius: 20,
+    marginBottom: 28,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  fieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+    width: '100%',
+    justifyContent: 'flex-start',
+  },
+  fieldLabel: {
+    fontSize: 16,
+    color: '#22C55E',
+    fontWeight: 'bold',
+    width: 130,
+    marginRight: 8,
+    letterSpacing: 0.2,
+  },
+  inputCustom: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+    flex: 1,
+    color: '#222',
+  },
+  dropdownBoxCustom: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  dropdownOptionCustom: {
+    backgroundColor: '#F3F3F3',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  dropdownSelectedCustom: {
+    backgroundColor: '#22C55E',
+  },
+  dropdownTextCustom: {
+    color: '#333',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  dropdownSelectedTextCustom: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  currency: {
+    fontSize: 18,
+    color: '#178a50',
+    marginRight: 6,
+  },
+  inputPrice: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 15,
+    backgroundColor: '#fff',
+    flex: 1,
+  },
+  submitBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 36,
+    marginTop: 22,
+    marginBottom: 10,
+    alignSelf: 'center',
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+  },
+  submitBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 19,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  cancelBtnCustom: {
+    backgroundColor: '#A3A3A3',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 36,
+    alignSelf: 'center',
+    marginBottom: 4,
+    shadowColor: '#A3A3A3',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 6,
+  },
+  cancelBtnTextCustom: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 17,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F8F8',
+    padding: 16,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#22C55E',
+    marginBottom: 16,
+  },
+  addBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    alignSelf: 'flex-end',
+    marginBottom: 12,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  productRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    elevation: 1,
+  },
+  productRowUnavailable: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.7,
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  productInfo: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  productName: {
+    fontSize: 16,
+    color: '#222',
+    fontWeight: '500',
+  },
+  productCategory: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  productPrice: {
+    fontSize: 16,
+    color: '#333',
+    width: 80,
+    textAlign: 'right',
+  },
+  statusBadge: {
+    borderRadius: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+    marginLeft: 8,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  statusActive: {
+    backgroundColor: '#22C55E',
+    color: '#fff',
+  },
+  statusInactive: {
+    backgroundColor: '#A3A3A3',
+    color: '#fff',
+  },
+  iconBtn: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  iconText: {
+    fontSize: 18,
+  },
+  noProducts: {
+    color: '#888',
+    fontSize: 15,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  refreshBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 12,
+  },
+  refreshBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    elevation: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#22C55E',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    fontSize: 15,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  statusSelect: {
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    marginHorizontal: 6,
+    fontWeight: 'bold',
+    fontSize: 15,
+    backgroundColor: '#F3F3F3',
+    color: '#333',
+  },
+  saveBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    marginRight: 8,
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  cancelBtn: {
+    backgroundColor: '#A3A3A3',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+  },
+  cancelBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  // ...existing code...
+  dropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 2,
+  },
+  dropdownLabel: {
+    fontSize: 15,
+    color: '#22C55E',
+    fontWeight: 'bold',
+    marginRight: 8,
+    width: 70,
+  },
+  dropdownBox: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dropdownOption: {
+    backgroundColor: '#F3F3F3',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  dropdownText: {
+    color: '#333',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  dropdownSelectedText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  readOnlyInput: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#F8F9FA',
+    width: '100%',
+  },
+  readOnlyText: {
+    fontSize: 16,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  categoryHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+});
+
+export default ProductManagementScreen;
