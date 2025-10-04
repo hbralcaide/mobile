@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
 import { SessionManager } from '../../../utils/sessionManager';
+import { useIsFocused } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VendorDashboard'>;
 
@@ -34,12 +36,14 @@ interface Product {
 
 const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
   const [vendor, setVendor] = useState<VendorProfile | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Get the current session to show logged-in user's name
   const session = SessionManager.getSession();
+  const isFocused = useIsFocused();
 
   const handleLogout = () => {
     SessionManager.clearSession();
@@ -112,6 +116,21 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         console.log('Final vendor with stall:', vendorWithStall);
         setVendor(vendorWithStall);
 
+        // try to set profile image: prefer remote URL from DB, fallback to local AsyncStorage
+        if (vendorWithStall?.profile_image_url) {
+          setProfileImage(vendorWithStall.profile_image_url);
+        } else {
+          try {
+            const local = await AsyncStorage.getItem(`vendor_avatar_${session.vendorId}`);
+            if (local) {
+              // stored as base64 string (data without mime prefix) -> prefix it
+              setProfileImage(`data:image/jpeg;base64,${local}`);
+            }
+          } catch (err) {
+            console.warn('Failed to read local avatar', err);
+          }
+        }
+
         // Fetch products for this specific vendor
         const { data: productData, error: productError } = await supabase
           .from('vendor_products')
@@ -139,8 +158,8 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
       setLoading(false);
     };
-    fetchData();
-  }, []);
+    if (isFocused) fetchData();
+  }, [isFocused]);
 
   // Stats
   const totalProducts = products.length;
@@ -180,7 +199,11 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       {/* Shop Profile Card (no Manage Products button) */}
       <View style={styles.shopCardCentered}>
         <View style={styles.shopCard}>
-          <View style={styles.shopAvatar} />
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.shopAvatarImage} />
+          ) : (
+            <View style={styles.shopAvatar} />
+          )}
           <View style={styles.shopInfo}>
             <Text style={styles.shopName}>{vendor.business_name || 'Shop Name'}</Text>
             <Text style={styles.shopDetail}>Stall No.: {vendor.stall?.stall_number || '—'}</Text>
@@ -412,6 +435,14 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: '#22C55E',
     marginBottom: 12,
+  },
+  shopAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 12,
+    borderWidth: 3,
+    borderColor: '#fff',
   },
   shopInfo: {
     alignItems: 'center',

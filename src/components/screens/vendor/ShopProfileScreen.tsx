@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, TextInput, Image, Alert, Platform, PermissionsAndroid } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, TextInput, Image, Alert, Platform, PermissionsAndroid, Switch } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
 import { SessionManager } from '../../../utils/sessionManager';
-import { launchImageLibrary, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
+import { launchImageLibrary, launchCamera, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
 
@@ -35,8 +36,39 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
     stallNo: '',
     businessName: '',
     contactNo: '',
-    operatingHours: '5:00 AM - 5:00 PM (Mon-Sun)'
+    // store a compact representation (JSON string) of the schedule
+    operatingHours: ''
   });
+
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  const createInitialSchedule = () => {
+    const base: Record<string, { open: boolean; start: string; end: string }> = {};
+    DAYS.forEach((d) => {
+      if (d === 'Saturday' || d === 'Sunday') {
+        base[d] = { open: false, start: '9:00 AM', end: '5:00 PM' };
+      } else {
+        base[d] = { open: true, start: '9:00 AM', end: '5:00 PM' };
+      }
+    });
+    return base;
+  };
+
+  const [hoursSchedule, setHoursSchedule] = useState<Record<string, { open: boolean; start: string; end: string }>>(createInitialSchedule());
+  const [openDropdown, setOpenDropdown] = useState<{ day: string | null; field: 'start' | 'end' | null }>({ day: null, field: null });
+
+  const TIMES_AM = [
+    '6:00 AM','6:30 AM','7:00 AM','7:30 AM','8:00 AM','8:30 AM','9:00 AM','9:30 AM','10:00 AM','10:30 AM','11:00 AM','11:30 AM'
+  ];
+
+  const TIMES_PM = [
+    '12:00 PM','12:30 PM','1:00 PM','1:30 PM','2:00 PM','2:30 PM','3:00 PM','3:30 PM','4:00 PM','4:30 PM','5:00 PM','5:30 PM','6:00 PM','6:30 PM','7:00 PM','7:30 PM','8:00 PM'
+  ];
+
+  const selectTime = (day: string, field: 'start' | 'end', value: string) => {
+    setHoursSchedule((prev) => ({ ...prev, [day]: { ...prev[day], [field]: value } }));
+    setOpenDropdown({ day: null, field: null });
+  };
 
   useEffect(() => {
     const fetchVendorProfile = async () => {
@@ -91,8 +123,33 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           stallNo: stallData?.stall_number || '',
           businessName: vendorData.business_name || '',
           contactNo: vendorData.phone_number || '',
-          operatingHours: '5:00 AM - 5:00 PM (Mon-Sun)'
+          operatingHours: vendorData?.operating_hours || ''
         });
+
+        // restore profile image if saved
+        if (vendorData?.profile_image_url) {
+          setProfileImage(vendorData.profile_image_url);
+        } else if (session?.vendorId) {
+          try {
+            const b64 = await AsyncStorage.getItem(`vendor_avatar_${session.vendorId}`);
+            if (b64) setProfileImage(`data:image/jpeg;base64,${b64}`);
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // restore hours schedule if saved (stored as JSON string)
+        if (vendorData?.operating_hours) {
+          try {
+            const parsed = JSON.parse(vendorData.operating_hours);
+            // validate parsed shape minimally
+            if (typeof parsed === 'object' && parsed !== null) {
+              setHoursSchedule((prev) => ({ ...prev, ...parsed }));
+            }
+          } catch (err) {
+            console.warn('Invalid operating_hours JSON in vendor profile', err);
+          }
+        }
 
       } catch (err) {
         console.error('Error fetching vendor profile:', err);
@@ -108,46 +165,158 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   const handleImagePicker = async () => {
     if (!isEditing) return;
 
-    // Request permission for Android
-    if (Platform.OS === 'android') {
+    const chooseLibrary = async () => {
       try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: 'Storage Permission',
-            message: 'App needs access to your photos to select a profile picture.',
+        const options = {
+          mediaType: 'photo' as MediaType,
+          includeBase64: true,
+          maxHeight: 2000,
+          maxWidth: 2000,
+          quality: 0.8 as PhotoQuality,
+        };
+        launchImageLibrary(options, async (response: ImagePickerResponse) => {
+          if (response.didCancel || response.errorMessage) return;
+          if (response.assets && response.assets[0]) {
+            const asset = response.assets[0];
+            if (asset.base64 && session?.vendorId) {
+              try {
+                await AsyncStorage.setItem(`vendor_avatar_${session.vendorId}`, asset.base64);
+                setProfileImage(`data:${asset.type || 'image/jpeg'};base64,${asset.base64}`);
+              } catch (e) {
+                console.warn('Failed to save avatar locally', e);
+                setProfileImage(asset.uri || null);
+              }
+            } else {
+              setProfileImage(asset.uri || null);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Library pick failed', err);
+      }
+    };
+
+    const takePhoto = async () => {
+      try {
+        // Request camera permission on Android
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA, {
+            title: 'Camera Permission',
+            message: 'App needs access to your camera to take a profile picture.',
             buttonNeutral: 'Ask Me Later',
             buttonNegative: 'Cancel',
             buttonPositive: 'OK',
-          },
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission denied', 'Cannot access photos without permission.');
-          return;
+          });
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission denied', 'Cannot use camera without permission.');
+            return;
+          }
         }
-      } catch (err) {
-        console.warn(err);
-        return;
-      }
-    }
 
-    const options = {
-      mediaType: 'photo' as MediaType,
-      includeBase64: false,
-      maxHeight: 2000,
-      maxWidth: 2000,
-      quality: 0.8 as PhotoQuality,
+        const options = {
+          mediaType: 'photo' as MediaType,
+          includeBase64: true,
+          maxHeight: 2000,
+          maxWidth: 2000,
+          quality: 0.8 as PhotoQuality,
+          saveToPhotos: true,
+        };
+        launchCamera(options, async (response: ImagePickerResponse) => {
+          if (response.didCancel || response.errorMessage) return;
+          if (response.assets && response.assets[0]) {
+            const asset = response.assets[0];
+            if (asset.base64 && session?.vendorId) {
+              try {
+                await AsyncStorage.setItem(`vendor_avatar_${session.vendorId}`, asset.base64);
+                setProfileImage(`data:${asset.type || 'image/jpeg'};base64,${asset.base64}`);
+              } catch (e) {
+                console.warn('Failed to save avatar locally', e);
+                setProfileImage(asset.uri || null);
+              }
+            } else {
+              setProfileImage(asset.uri || null);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Camera failed', err);
+      }
     };
 
-    launchImageLibrary(options, (response: ImagePickerResponse) => {
-      if (response.didCancel || response.errorMessage) {
-        return;
+    // Present simple choice
+    Alert.alert('Upload Photo', 'Choose photo source', [
+      { text: 'Take Photo', onPress: takePhoto },
+      { text: 'Choose from Library', onPress: chooseLibrary },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const saveProfile = async () => {
+    setLoading(true);
+    try {
+      // serialize schedule into formData
+      const serialized = JSON.stringify(hoursSchedule);
+      setFormData((prev) => ({ ...prev, operatingHours: serialized }));
+
+      let publicUrl: string | null = null;
+      if (profileImage) {
+        try {
+          // fetch the local file and convert to blob
+          const response = await fetch(profileImage);
+          const blob = await response.blob();
+          const filename = `avatars/${session?.vendorId || 'unknown'}_${Date.now()}.jpg`;
+          const { error: uploadError } = await supabase.storage.from('vendor-avatars').upload(filename, blob, { upsert: true });
+          if (uploadError) {
+            console.warn('Upload error', uploadError);
+          } else {
+            const { data } = supabase.storage.from('vendor-avatars').getPublicUrl(filename);
+            publicUrl = data?.publicUrl || null;
+          }
+        } catch (err) {
+          console.warn('Failed to upload profile image', err);
+        }
       }
 
-      if (response.assets && response.assets[0]) {
-        setProfileImage(response.assets[0].uri || null);
+      // prepare update payload
+      const payload: any = {
+        business_name: formData.businessName,
+        phone_number: formData.contactNo,
+      };
+      if (formData.operatingHours) payload.operating_hours = formData.operatingHours;
+      if (publicUrl) payload.profile_image_url = publicUrl;
+
+      if (!session?.vendorId) {
+        throw new Error('No vendor session found');
       }
-    });
+
+      const { error: updateError } = await supabase
+        .from('vendor_profiles')
+        .update(payload)
+        .eq('id', session.vendorId);
+
+      if (updateError) {
+        console.error('Failed to update vendor profile', updateError);
+        Alert.alert('Save failed', 'Could not save profile. Please try again.');
+      } else {
+        // update local vendor state
+        setVendor((prev) => prev ? ({ ...prev, business_name: formData.businessName, phone_number: formData.contactNo, /* keep other fields */ }) : prev);
+        if (publicUrl) setProfileImage(publicUrl);
+        // update session so other screens (like dashboard) can reflect the change immediately
+        try {
+          const current = SessionManager.getSession();
+          if (current) {
+            SessionManager.setSession({ ...current, businessName: formData.businessName });
+          }
+        } catch (e) {
+          // ignore
+        }
+        Alert.alert('Saved', 'Profile updated successfully');
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'An unexpected error occurred while saving.');
+    }
+    setLoading(false);
   };
 
   if (loading) {
@@ -254,21 +423,118 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           />
         </View>
 
+        {/* Operating Hours Schedule */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Operating Hours</Text>
-          <TextInput
-            style={[styles.input, !isEditing && styles.inputDisabled]}
-            value={formData.operatingHours}
-            onChangeText={(text) => setFormData({ ...formData, operatingHours: text })}
-            placeholder="Enter operating hours"
-            editable={isEditing}
-          />
+          <View style={styles.scheduleContainer}>
+            {DAYS.map((day) => {
+              const entry = hoursSchedule[day];
+              if (!isEditing) {
+                // read-only mode: no switches, just show day and times (or Closed)
+                return (
+                  <View key={day} style={styles.scheduleRow}>
+                    <Text style={styles.dayLabel}>{day}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {entry.open ? (
+                        <>
+                          <View style={[styles.timeInput, { justifyContent: 'center' }]}>
+                            <Text style={styles.timeInputText}>{entry.start}</Text>
+                          </View>
+                          <Text style={styles.timeSeparator}>to</Text>
+                          <View style={[styles.timeInput, { justifyContent: 'center' }]}>
+                            <Text style={styles.timeInputText}>{entry.end}</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <Text style={styles.closedText}>Closed</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              // edit mode: interactive controls
+              return (
+                <View key={day} style={[styles.scheduleRow, { opacity: entry.open ? 1 : 0.5 }] }>
+                  <Text style={styles.dayLabel}>{day}</Text>
+                  <View style={styles.switchContainer}>
+                    <Switch
+                      value={entry.open}
+                      onValueChange={(val) => {
+                        if (!isEditing) return;
+                        setHoursSchedule((prev) => ({ ...prev, [day]: { ...prev[day], open: val } }));
+                      }}
+                      disabled={!isEditing}
+                      trackColor={{ true: '#22C55E', false: '#9CA3AF' }}
+                      ios_backgroundColor="#9CA3AF"
+                      thumbColor={entry.open ? '#FFFFFF' : '#6B7280'}
+                    />
+                    <Text style={[styles.openIndicator, entry.open ? styles.openText : styles.closedText]}>{entry.open ? 'Open' : 'Closed'}</Text>
+                  </View>
+                  {entry.open ? (
+                    <>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (!isEditing) return;
+                          setOpenDropdown({ day, field: 'start' });
+                        }}
+                        style={[styles.timeInput]}
+                      >
+                        <Text style={styles.timeInputText}>{entry.start}</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.timeSeparator}>to</Text>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (!isEditing) return;
+                          setOpenDropdown({ day, field: 'end' });
+                        }}
+                        style={[styles.timeInput]}
+                      >
+                        <Text style={styles.timeInputText}>{entry.end}</Text>
+                      </TouchableOpacity>
+
+                      {openDropdown.day === day && openDropdown.field && (
+                        <View style={styles.dropdownBox}>
+                          <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                            {(openDropdown.field === 'start' ? TIMES_AM : TIMES_PM).map((t) => (
+                              <TouchableOpacity key={t} style={styles.dropdownItem} onPress={() => selectTime(day, openDropdown.field as 'start' | 'end', t)}>
+                                <Text style={styles.dropdownItemText}>{t}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    // when closed, hide times to keep UI clean
+                    <View style={{ flex: 1 }} />
+                  )}
+                </View>
+              );
+            })}
+          </View>
         </View>
+
+        
 
         {/* Save/Edit Toggle Button */}
         <TouchableOpacity
           style={styles.saveButton}
-          onPress={() => setIsEditing(!isEditing)}
+          onPress={async () => {
+            if (isEditing) {
+              // user is saving changes: persist schedule into formData as JSON and save
+              try {
+                const serialized = JSON.stringify(hoursSchedule);
+                setFormData((prev) => ({ ...prev, operatingHours: serialized }));
+              } catch (e) {
+                console.warn('Failed to serialize hours schedule', e);
+              }
+              await saveProfile();
+            }
+            setIsEditing(!isEditing);
+          }}
         >
           <Text style={styles.saveButtonText}>
             {isEditing ? 'Save Changes' : 'Edit Profile'}
@@ -551,6 +817,84 @@ const styles = StyleSheet.create({
   qrSubtext: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  /* Operating hours schedule styles */
+  scheduleContainer: {
+    backgroundColor: '#fff'
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+    flexWrap: 'nowrap',
+  },
+  dayLabel: {
+    width: 80,
+    fontSize: 14,
+    color: '#374151',
+  },
+  switchContainer: {
+    width: 50,
+    alignItems: 'center',
+  },
+  timeInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: 88,
+    backgroundColor: '#F9FAFB',
+    color: '#374151',
+  },
+  timeSeparator: {
+    marginHorizontal: 8,
+    color: '#6B7280',
+  },
+  openIndicator: {
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  openText: {
+    color: '#22C55E',
+    fontWeight: '600',
+  },
+  closedText: {
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  timeInputText: {
+    color: '#374151',
+    fontSize: 14,
+  },
+  dropdownBox: {
+    position: 'absolute',
+    top: 42,
+  right: 20,
+  width: 120,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    maxHeight: 220,
+    zIndex: 999,
+    // shadow / elevation for prominence
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#374151',
   },
 });
 
