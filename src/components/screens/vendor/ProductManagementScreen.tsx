@@ -16,6 +16,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [modalVisible, setModalVisible] = useState(false);
   const [editProduct, setEditProduct] = useState<any | null>(null);
   const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
+  const [showProductNameDropdown, setShowProductNameDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showUomDropdown, setShowUomDropdown] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
@@ -260,6 +261,16 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
 
   // Auto-set category based on vendor's market section
+  // Show product dropdown when category is selected (only for new products)
+  useEffect(() => {
+    if (form.category_id && !editProduct) {
+      const filteredProducts = getFilteredProducts();
+      if (filteredProducts.length > 0) {
+        setShowProductNameDropdown(true);
+      }
+    }
+  }, [form.category_id, availableProducts, editProduct]);
+
   useEffect(() => {
     if (currentVendorProfile && categories.length > 0 && !form.category_id) {
       const autoCategoryId = getAutoCategoryId();
@@ -280,6 +291,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
       uom: '',
       status: 'Available'
     });
+    setShowProductNameDropdown(false);
     setShowUomDropdown(false);
     setShowCategoryDropdown(false);
     setModalVisible(true);
@@ -682,11 +694,55 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                 <TextInput
                   style={[styles.inputVertical, editProduct && styles.inputDisabled]}
                   value={form.name}
-                  editable={false}
+                  onChangeText={text => {
+                    setForm(f => ({ ...f, name: text }));
+                    if (!editProduct) {
+                      setShowProductNameDropdown(true);
+                    }
+                  }}
+                  editable={!editProduct}
                   placeholder="Product name"
                   autoCorrect={false}
                   autoCapitalize="words"
                 />
+                {!editProduct && showProductNameDropdown && (
+                  <View style={styles.dropdownMenuScrollable}>
+                    <ScrollView
+                      style={styles.scrollableContainer}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {getFilteredProducts().filter(productItem =>
+                        form.name.length === 0 || productItem.name.toLowerCase().includes(form.name.toLowerCase())
+                      ).map((productItem, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            const price = productItem.base_price || productItem.price || productItem.basePrice || '';
+                            const unit = productItem.unit || productItem.uom || 'piece';
+                            
+                            setForm(f => ({
+                              ...f,
+                              name: productItem.name,
+                              price: price.toString(),
+                              uom: unit
+                            }));
+                            setShowProductNameDropdown(false);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.dropdownItemText}>
+                            {productItem.name}
+                            {(productItem.base_price || productItem.price || productItem.basePrice) &&
+                              ` - ₱${productItem.base_price || productItem.price || productItem.basePrice}/${productItem.unit || productItem.uom || 'piece'}`}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
             </View>
 
