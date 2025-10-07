@@ -18,7 +18,6 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showUomDropdown, setShowUomDropdown] = useState(false);
-  const [showProductNameDropdown, setShowProductNameDropdown] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
   const [currentVendorProfile, setCurrentVendorProfile] = useState<any | null>(null);
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
@@ -258,15 +257,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     fetchAllProducts();
   }, []);
 
-  // Show product dropdown when category is selected
-  useEffect(() => {
-    if (form.category_id) {
-      const filteredProducts = getFilteredProducts();
-      if (filteredProducts.length > 0) {
-        setShowProductNameDropdown(true);
-      }
-    }
-  }, [form.category_id, availableProducts]);
+
 
   // Auto-set category based on vendor's market section
   useEffect(() => {
@@ -289,23 +280,28 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
       uom: '',
       status: 'Available'
     });
-    setShowProductNameDropdown(false);
     setShowUomDropdown(false);
     setShowCategoryDropdown(false);
     setModalVisible(true);
   };
 
   const openEditModal = (vendorProduct: any) => {
+    console.log('Opening edit modal for product:', vendorProduct);
     setEditProduct(vendorProduct);
+
+    // Capitalize the first letter of status
+    const formattedStatus = vendorProduct.status 
+      ? vendorProduct.status.charAt(0).toUpperCase() + vendorProduct.status.slice(1) 
+      : 'Available';
 
     setForm({
       name: vendorProduct.products?.name || '',
-      price: vendorProduct.price || '',
+      price: vendorProduct.price?.toString() || '',
       category_id: vendorProduct.products?.category_id || '',
       uom: vendorProduct.uom || '',
-      status: vendorProduct.status || 'Available'
+      status: formattedStatus
     });
-    setShowProductNameDropdown(false);
+
     setShowUomDropdown(false);
     setShowCategoryDropdown(false);
     setModalVisible(true);
@@ -315,7 +311,6 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     setModalVisible(false);
     setEditProduct(null);
     setForm({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
-    setShowProductNameDropdown(false);
     setShowUomDropdown(false);
     setShowCategoryDropdown(false);
   };
@@ -340,7 +335,27 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
       if (editProduct) {
         // Update existing product
-        console.log('Updating product with ID:', editProduct.id);
+        console.log('Updating product with ID:', editProduct.id, 'with data:', {
+          price: form.price,
+          uom: form.uom,
+          status: form.status.toLowerCase()
+        });
+
+        // First verify the product exists and belongs to the vendor
+        const { data: checkProduct, error: checkError } = await supabase
+          .from('vendor_products')
+          .select('id')
+          .eq('id', editProduct.id)
+          .eq('vendor_id', vendorProfile.id)
+          .single();
+
+        if (!checkProduct) {
+          console.error('Product not found or not owned by vendor:', checkError);
+          Alert.alert('Error', 'Product not found or you do not have permission to edit it');
+          setSaving(false);
+          return;
+        }
+
         const { data: updateData, error: updateError } = await supabase
           .from('vendor_products')
           .update({
@@ -349,6 +364,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
             status: form.status.toLowerCase()
           })
           .eq('id', editProduct.id)
+          .eq('vendor_id', vendorProfile.id)
           .select();
 
         console.log('Update response:', { updateData, updateError });
@@ -369,10 +385,10 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                 : p
             )
           );
+          
+          // Show success message and close modal
           Alert.alert('Success', 'Product updated successfully');
           closeModal();
-          // Refresh the full list
-          await fetchProducts();
         }
       } else {
         // Check if product already exists
@@ -599,7 +615,6 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           style={styles.modalOverlay}
           activeOpacity={1}
           onPress={() => {
-            setShowProductNameDropdown(false);
             setShowUomDropdown(false);
             setShowCategoryDropdown(false);
             setModalVisible(false);
@@ -648,7 +663,6 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                               uom: ''
                             }));
                             setShowCategoryDropdown(false);
-                            setShowProductNameDropdown(true);
                           }}
                           activeOpacity={0.7}
                         >
@@ -666,68 +680,13 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
               <Text style={styles.fieldLabelVertical}>Product Name:</Text>
               <View style={styles.dropdownContainer}>
                 <TextInput
-                  style={styles.inputVertical}
-                  placeholder={form.category_id ? "Select from list below or type to filter" : "Select a category first"}
+                  style={[styles.inputVertical, editProduct && styles.inputDisabled]}
                   value={form.name}
-                  editable={!!form.category_id}
-                  onChangeText={text => {
-                    setForm(f => ({ ...f, name: text }));
-                    const filteredProducts = getFilteredProducts();
-                    setShowProductNameDropdown(filteredProducts.length > 0);
-                  }}
-                  onFocus={() => {
-                    const filteredProducts = getFilteredProducts();
-                    setShowProductNameDropdown(filteredProducts.length > 0);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setShowProductNameDropdown(false), 150);
-                  }}
+                  editable={false}
+                  placeholder="Product name"
                   autoCorrect={false}
                   autoCapitalize="words"
                 />
-                {showProductNameDropdown && (
-                  <View style={styles.dropdownMenuScrollable}>
-                    <ScrollView
-                      style={styles.scrollableContainer}
-                      showsVerticalScrollIndicator={true}
-                      nestedScrollEnabled={true}
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      {getFilteredProducts().filter(productItem =>
-                        form.name.length === 0 || productItem.name.toLowerCase().includes(form.name.toLowerCase())
-                      ).map((productItem, index) => (
-                        <TouchableOpacity
-                          key={index}
-                          style={styles.dropdownItem}
-                          onPress={() => {
-                            // Get price from multiple possible field names
-                            const price = productItem.base_price || productItem.price || productItem.basePrice || '';
-                            const unit = productItem.unit || productItem.uom || 'piece';
-                            
-                            console.log('Selected product:', productItem.name);
-                            console.log('Price found:', price);
-                            console.log('Unit found:', unit);
-                            
-                            setForm(f => ({
-                              ...f,
-                              name: productItem.name,
-                              price: price.toString(),
-                              uom: unit
-                            }));
-                            setShowProductNameDropdown(false);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.dropdownItemText}>
-                            {productItem.name}
-                            {(productItem.base_price || productItem.price || productItem.basePrice) && 
-                              ` - ₱${productItem.base_price || productItem.price || productItem.basePrice}/${productItem.unit || productItem.uom || 'piece'}`}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
               </View>
             </View>
 
