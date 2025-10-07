@@ -147,21 +147,33 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
+    console.log('Fetching products...');
 
     try {
-      const vendorProfile = currentVendorProfile || await getCurrentVendorProfile();
-      if (!vendorProfile) {
-        setError('Unable to load vendor profile. Please login again.');
+      const session = SessionManager.getSession();
+      if (!session?.vendorId) {
+        console.error('No vendor ID in session');
+        setError('Please login again to manage products.');
         setProducts([]);
         setLoading(false);
         return;
       }
 
+      // Clear any stale data first
+      setProducts([]);
+
+      console.log('Fetching with vendor ID:', session.vendorId);
       const { data, error: prodError } = await supabase
         .from('vendor_products')
         .select(`
-          *,
+          id,
+          price,
+          uom,
+          status,
+          vendor_id,
+          product_id,
           products (
+            id,
             name,
             description,
             category_id,
@@ -171,7 +183,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
             )
           )
         `)
-        .eq('vendor_id', vendorProfile.id)
+        .eq('vendor_id', session.vendorId)
         .order('created_at', { ascending: false });
 
       if (prodError) {
@@ -315,6 +327,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     }
 
     setSaving(true);
+    console.log('Saving product with form data:', form);
+    console.log('Edit product data:', editProduct);
 
     try {
       const vendorProfile = currentVendorProfile || await getCurrentVendorProfile();
@@ -326,22 +340,39 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
       if (editProduct) {
         // Update existing product
-        const { error: updateError } = await supabase
+        console.log('Updating product with ID:', editProduct.id);
+        const { data: updateData, error: updateError } = await supabase
           .from('vendor_products')
           .update({
             price: form.price,
             uom: form.uom,
             status: form.status.toLowerCase()
           })
-          .eq('id', editProduct.id);
+          .eq('id', editProduct.id)
+          .select();
 
+        console.log('Update response:', { updateData, updateError });
         if (updateError) {
           console.error('Update error:', updateError);
           Alert.alert('Error', 'Failed to update product');
         } else {
+          // Immediately update the UI
+          setProducts(prevProducts =>
+            prevProducts.map(p =>
+              p.id === editProduct.id
+                ? {
+                    ...p,
+                    price: form.price,
+                    uom: form.uom,
+                    status: form.status.toLowerCase()
+                  }
+                : p
+            )
+          );
           Alert.alert('Success', 'Product updated successfully');
           closeModal();
-          fetchProducts();
+          // Refresh the full list
+          await fetchProducts();
         }
       } else {
         // Check if product already exists
@@ -421,32 +452,74 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     setSaving(false);
   };
 
-  const handleDelete = async (vendorProduct: any) => {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const handleDelete = (vendorProduct: any) => {
+    if (!vendorProduct?.id) {
+      console.error('Invalid product data:', vendorProduct);
+      Alert.alert('Error', 'Cannot delete: Invalid product data');
+      return;
+    }
+
+    console.log('Attempting to delete product:', {
+      id: vendorProduct.id,
+      name: vendorProduct.products?.name,
+      vendor_id: vendorProduct.vendor_id
+    });
+    
     Alert.alert(
       'Delete Product',
-      'Are you sure you want to delete this product?',
+      `Are you sure you want to delete "${vendorProduct.products?.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            setDeletingId(vendorProduct.id);
             try {
+              const session = SessionManager.getSession();
+              if (!session?.vendorId) {
+                setDeletingId(null);
+                Alert.alert('Error', 'Please login again to delete products');
+                return;
+              }
+
+              // Delete the vendor product
               const { error } = await supabase
                 .from('vendor_products')
                 .delete()
-                .eq('id', vendorProduct.id);
+                .match({ 
+                  id: vendorProduct.id,
+                  vendor_id: session.vendorId 
+                });
 
+              console.log('Delete response:', { error });
               if (error) {
                 console.error('Delete error:', error);
                 Alert.alert('Error', 'Failed to delete product');
               } else {
+                // First update UI
+                setProducts(prevProducts => 
+                  prevProducts.filter(p => p.id !== vendorProduct.id)
+                );
+
+                // Update the UI and show success message
                 Alert.alert('Success', 'Product deleted successfully');
-                fetchProducts();
+                
+                // Remove from local state immediately
+                setProducts(prevProducts => {
+                  const filtered = prevProducts.filter(p => p.id !== vendorProduct.id);
+                  return filtered;
+                });
+                
+                // Clear the deleting state
+                setDeletingId(null);
               }
             } catch (err) {
               console.error('Delete error:', err);
               Alert.alert('Error', 'An unexpected error occurred');
+            } finally {
+              setDeletingId(null);
             }
           }
         }
@@ -498,8 +571,14 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
             <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
               <Text style={styles.iconText}>✏️</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(item)}>
-              <Text style={styles.iconText}>🗑️</Text>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => handleDelete(item)}
+              disabled={deletingId === item.id}
+            >
+              <Text style={styles.iconText}>
+                {deletingId === item.id ? '⏳' : '🗑️'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
