@@ -634,7 +634,6 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         >
           <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => { }}>
             <Text style={styles.modalTitleCustom}>{editProduct ? 'Edit Product' : 'Add New Product'}</Text>
-            <View style={styles.imagePlaceholder} />
 
             <View style={styles.fieldRowVertical}>
               <Text style={styles.fieldLabelVertical}>Product Category:</Text>
@@ -772,20 +771,27 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                   </Text>
                 </TouchableOpacity>
                 {showUomDropdown && (
-                  <View style={styles.dropdownMenu}>
-                    {uomOptions.map((uom, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.dropdownItem}
-                        onPress={() => {
-                          setForm(f => ({ ...f, uom }));
-                          setShowUomDropdown(false);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.dropdownItemText}>{uom}</Text>
-                      </TouchableOpacity>
-                    ))}
+                  <View style={styles.dropdownMenuScrollable}>
+                    <ScrollView
+                      style={styles.scrollableContainer}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {uomOptions.map((uom, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setForm(f => ({ ...f, uom }));
+                            setShowUomDropdown(false);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.dropdownItemText}>{uom}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
               </View>
