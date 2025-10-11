@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     View,
     Text,
@@ -26,6 +26,7 @@ interface VendorInfo {
     };
     productCount: number;
     availableProductCount: number;
+    meatTypes?: { pork: boolean; beef: boolean; chicken: boolean };
 }
 
 const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -33,6 +34,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
     const [vendors, setVendors] = useState<VendorInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sortMode, setSortMode] = useState<'alpha' | 'stall'>('alpha'); // toggle between alphabetical and stall number
 
     useEffect(() => {
         fetchVendorsByCategory();
@@ -44,7 +46,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             setError(null);
 
             // Query vendor_products based on vendor business type since products don't have category column
-            const { data: vendorProducts, error: vendorError } = await supabase
+                        const { data: vendorProducts, error: vendorError } = await supabase
                 .from('vendor_products')
                 .select(`
           vendor_id,
@@ -58,8 +60,10 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
           ),
           products!inner (
             id,
-            name,
-            description
+                        name,
+                        description,
+                        category_id,
+                        product_categories ( name )
           )
         `);
 
@@ -71,24 +75,92 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
 
             console.log('Vendor products data:', vendorProducts);
 
-            // Filter and group by vendor based on business type and calculate product counts
+            // Filter and group by vendor based on selected category and calculate product counts
             const vendorMap = new Map<string, any>();
+
+            const normalize = (s: string) => (s || '').toLowerCase();
+            const selected = normalize(category);
 
             vendorProducts?.forEach((item: any) => {
                 const vendorId = item.vendor_id;
-                const businessName = item.vendor_profiles.business_name.toLowerCase();
+                const businessName = normalize(item.vendor_profiles.business_name);
+                const productName = normalize(item.products?.name || '');
+                const productCategoryName = normalize(item.products?.product_categories?.[0]?.name || item.products?.product_categories?.name || '');
                 const isAvailable = item.status === 'available' || item.status === 'active';
+                const stallRaw = (item.vendor_profiles?.stall_number || '').toString();
+                const stallUpper = stallRaw.toUpperCase().replace(/\s+/g, '');
 
-                // Filter vendors based on category - match business name with category
+                // Determine meat subtype flags for badges
+                const isPork = (
+                    productCategoryName.includes('pork') ||
+                    productName.includes('pork') || productName.includes('baboy') || productName.includes('liempo') || productName.includes('lomo') || productName.includes('pigue') || productName.includes('pata') || productName.includes('tadyang') || productName.includes('loin') || productName.includes('chop') || productName.includes('shoulder')
+                );
+                const isBeef = (
+                    productCategoryName.includes('beef') ||
+                    productName.includes('beef') || productName.includes('baka') || productName.includes('brisket') || productName.includes('sirloin') || productName.includes('tenderloin') || productName.includes('ribeye') || productName.includes('ribs') || productName.includes('short rib') || productName.includes('shank') || productName.includes('oxtail') || productName.includes('kalitiran') || productName.includes('tadyang')
+                );
+                const isChicken = (
+                    productCategoryName.includes('chicken') ||
+                    productName.includes('chicken') || productName.includes('manok') || productName.includes('drumstick') || productName.includes('thigh') || productName.includes('wing') || productName.includes('breast')
+                );
+
+                // Filter vendors based on main categories
                 let matchesCategory = false;
-                if (category.toLowerCase() === 'fish') {
-                    matchesCategory = businessName.includes('fish');
-                } else if (category.toLowerCase() === 'pork') {
-                    matchesCategory = businessName.includes('pork') || businessName.includes('meat');
-                } else if (category.toLowerCase() === 'vegetables') {
-                    matchesCategory = businessName.includes('vegetable') || businessName.includes('veggie');
-                } else if (category.toLowerCase() === 'rice/grain') {
-                    matchesCategory = businessName.includes('rice') || businessName.includes('grain');
+                if (selected === 'fish') {
+                    // Strictly F stalls (not DF)
+                    const stallOk = stallUpper.startsWith('F') && !stallUpper.startsWith('DF');
+                    matchesCategory = stallOk;
+                } else if (selected === 'meat') {
+                    // Any vendor selling pork/beef/chicken (by product category or item names) counts as Meat
+                    matchesCategory = (
+                        productCategoryName.includes('meat') || productCategoryName.includes('pork') || productCategoryName.includes('beef') || productCategoryName.includes('chicken') ||
+                        businessName.includes('meat') || businessName.includes('butcher') || businessName.includes('karne') ||
+                        productName.includes('pork') || productName.includes('baboy') || productName.includes('liempo') || productName.includes('lomo') || productName.includes('pigue') || productName.includes('pata') || productName.includes('tadyang') ||
+                        productName.includes('beef') || productName.includes('baka') || productName.includes('brisket') || productName.includes('sirloin') || productName.includes('tenderloin') || productName.includes('ribeye') || productName.includes('ribs') || productName.includes('short rib') || productName.includes('shank') || productName.includes('oxtail') || productName.includes('kalitiran') ||
+                        productName.includes('chicken') || productName.includes('manok') || productName.includes('drumstick') || productName.includes('thigh') || productName.includes('wing') || productName.includes('breast') ||
+                        productName.includes('goat') || productName.includes('kambing') || productName.includes('carabeef') || productName.includes('veal')
+                    );
+                } else if (selected === 'pork') {
+                    matchesCategory = (
+                        productCategoryName.includes('pork') ||
+                        businessName.includes('pork') || businessName.includes('karne') ||
+                        productName.includes('pork') || productName.includes('baboy') || productName.includes('pigue') || productName.includes('pata') || productName.includes('liempo') || productName.includes('lomo') || productName.includes('tadyang')
+                    );
+                } else if (selected === 'beef') {
+                    matchesCategory = (
+                        productCategoryName.includes('beef') ||
+                        businessName.includes('beef') || businessName.includes('karne') ||
+                        productName.includes('beef') || productName.includes('baka') || productName.includes('brisket') || productName.includes('sirloin') || productName.includes('tenderloin') || productName.includes('ribeye') || productName.includes('ribs') || productName.includes('short rib') || productName.includes('shank') || productName.includes('oxtail') || productName.includes('kalitiran') || productName.includes('tadyang')
+                    );
+                } else if (selected === 'chicken') {
+                    matchesCategory = (
+                        productCategoryName.includes('chicken') ||
+                        businessName.includes('chicken') || businessName.includes('manok') || businessName.includes('karne') ||
+                        productName.includes('chicken') || productName.includes('manok') || productName.includes('drumstick') || productName.includes('thigh') || productName.includes('wing') || productName.includes('breast')
+                    );
+                } else if (selected === 'vegetables & fruits') {
+                    matchesCategory = (
+                        businessName.includes('vegetable') || businessName.includes('veggie') || businessName.includes('gulay') ||
+                        businessName.includes('fruit') || businessName.includes('prutas') ||
+                        productName.includes('vegetable') || productName.includes('gulay') ||
+                        productName.includes('fruit') || productName.includes('prutas')
+                    );
+                } else if (selected === 'rice & grain' || selected === 'rice/grain') {
+                    matchesCategory = (
+                        businessName.includes('rice') || businessName.includes('grain') || businessName.includes('bigas') || businessName.includes('palay') ||
+                        productName.includes('rice') || productName.includes('grain') || productName.includes('bigas') || productName.includes('palay')
+                    );
+                } else if (selected === 'grocery') {
+                    matchesCategory = (
+                        businessName.includes('grocery') || businessName.includes('sari-sari') || businessName.includes('store') ||
+                        productName.includes('sardines') || productName.includes('canned') || productName.includes('noodles') ||
+                        productName.includes('suka') || productName.includes('toyo') || productName.includes('patis') ||
+                        productName.includes('sugar') || productName.includes('salt') || productName.includes('oil')
+                    );
+                } else if (selected === 'dried fish') {
+                    // Strictly DF stalls
+                    const stallOk = stallUpper.startsWith('DF');
+                    matchesCategory = stallOk;
                 }
 
                 if (!matchesCategory) return; // Skip vendors that don't match the category
@@ -101,6 +173,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                         productCount: 0,
                         availableProductCount: 0,
                         stall: null,
+                        meatTypes: { pork: false, beef: false, chicken: false },
                     });
                 }
 
@@ -109,6 +182,10 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                 if (isAvailable) {
                     vendor.availableProductCount += 1;
                 }
+                // Accumulate meat type flags
+                if (isPork) vendor.meatTypes.pork = true;
+                if (isBeef) vendor.meatTypes.beef = true;
+                if (isChicken) vendor.meatTypes.chicken = true;
             });
 
             // Fetch stall information for each vendor
@@ -133,31 +210,27 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                 }
             });
 
-            // For vendors without stall data, use fallback from vendor_profiles or defaults
+            // For vendors without stall data, try to use data from vendor_profiles; avoid hardcoded defaults
             Array.from(vendorMap.values()).forEach((vendor: any) => {
                 if (!vendor.stall) {
                     // Find the vendor profile data from the original query
                     const vendorProductItem = vendorProducts?.find(item => item.vendor_id === vendor.id);
                     if (vendorProductItem?.vendor_profiles) {
                         const vendorProfile = vendorProductItem.vendor_profiles as any;
-                        vendor.stall = {
-                            stall_number: vendorProfile.stall_number || 'F-1', // Default for Fish vendors
-                            location_description: vendorProfile.complete_address || 'Toril Public Market'
-                        };
+                        if (vendorProfile.stall_number || vendorProfile.complete_address) {
+                            vendor.stall = {
+                                stall_number: vendorProfile.stall_number || undefined,
+                                location_description: vendorProfile.complete_address || 'Toril Public Market'
+                            };
+                        }
                     } else {
-                        // Complete fallback for vendors with no profile data
-                        vendor.stall = {
-                            stall_number: 'F-1',
-                            location_description: 'Toril Public Market'
-                        };
+                        // No extra data available; keep stall as null
                     }
                 }
             });
 
-            // Convert map to array and filter vendors with available products
-            const vendorList = Array.from(vendorMap.values()).filter(
-                (vendor: any) => vendor.availableProductCount > 0
-            );
+            // Convert map to array (we'll sort in UI based on selected mode)
+            const vendorList = Array.from(vendorMap.values());
 
             setVendors(vendorList);
         } catch (err) {
@@ -174,6 +247,30 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             vendorName: vendor.business_name
         });
     };
+
+    // Derived sorted vendors by selected numeric mode
+    const sortedVendors = useMemo(() => {
+        const list = [...vendors];
+        const normalizeName = (s?: string) => (s || '').toString().toLowerCase();
+        const stallKey = (stallNo?: string) => {
+            const s = (stallNo || '').toString();
+            const numMatch = s.match(/\d+/);
+            const num = numMatch ? parseInt(numMatch[0], 10) : Number.MAX_SAFE_INTEGER;
+            const prefix = (s.match(/[A-Za-z]+/) || ['zzz'])[0];
+            return { prefix, num };
+        };
+
+        if (sortMode === 'alpha') {
+            return list.sort((a, b) => normalizeName(a.business_name).localeCompare(normalizeName(b.business_name)));
+        }
+        // 'stall' numerical order
+        return list.sort((a: any, b: any) => {
+            const ka = stallKey(a.stall?.stall_number);
+            const kb = stallKey(b.stall?.stall_number);
+            if (ka.prefix !== kb.prefix) return ka.prefix.localeCompare(kb.prefix);
+            return ka.num - kb.num;
+        });
+    }, [vendors, sortMode]);
 
     const renderVendorCard = ({ item }: { item: VendorInfo }) => {
         // Determine status color based on available products
@@ -200,11 +297,22 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                             )}
                         </View>
                     </View>
-                    <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
+                    <View style={styles.badgesRight}>
+                        {(() => {
+                            const icons: string[] = [];
+                            if (item.meatTypes?.pork) icons.push('🐖');
+                            if (item.meatTypes?.beef) icons.push('🐄');
+                            if (item.meatTypes?.chicken) icons.push('🍗');
+                            return icons.map((ic, idx) => (
+                                <Text key={idx} style={styles.badgeIcon}>{ic}</Text>
+                            ));
+                        })()}
+                        <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
+                    </View>
                 </View>
 
                 <Text style={styles.stallProductCount}>
-                    � {item.availableProductCount} products available
+                    • {item.availableProductCount} products available
                 </Text>
             </TouchableOpacity>
         );
@@ -245,7 +353,19 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             <View style={styles.contentContainer}>
                 <Text style={styles.sectionTitle}>List of Stalls</Text>
 
-                {vendors.length === 0 ? (
+                {/* Sort Toggle: Alphabetical vs Stall # */}
+                <View style={styles.sortBar}>
+                    <TouchableOpacity
+                        style={styles.sortToggle}
+                        onPress={() => setSortMode(prev => (prev === 'alpha' ? 'stall' : 'alpha'))}
+                    >
+                        <Text style={styles.sortToggleText}>
+                            Sort: {sortMode === 'alpha' ? 'A–Z' : 'Stall #'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {sortedVendors.length === 0 ? (
                     <View style={styles.centered}>
                         <Text style={styles.noVendorsText}>
                             No vendors selling {category.toLowerCase()} products found.
@@ -253,7 +373,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                     </View>
                 ) : (
                     <FlatList
-                        data={vendors}
+                        data={sortedVendors}
                         keyExtractor={(item) => item.id}
                         renderItem={renderVendorCard}
                         contentContainerStyle={styles.listContainer}
@@ -313,6 +433,43 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: 20,
     },
+    // Sort bar styles
+    sortBar: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        marginBottom: 10,
+    },
+    sortToggle: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        elevation: 2,
+    },
+    sortToggleText: {
+        color: '#333333',
+        fontWeight: '600',
+    },
+    sortButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        elevation: 2,
+    },
+    sortButtonActive: {
+        backgroundColor: '#4CAF50',
+    },
+    sortButtonText: {
+        color: '#333333',
+        fontWeight: '700',
+    },
+    sortButtonTextActive: {
+        color: '#FFFFFF',
+    },
     stallCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 12,
@@ -360,6 +517,15 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
         marginLeft: 10,
+    },
+    badgesRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    badgeIcon: {
+        fontSize: 16,
+        marginLeft: 6,
     },
     stallProductCount: {
         fontSize: 14,

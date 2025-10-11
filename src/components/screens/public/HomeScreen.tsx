@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     marginBottom: 50,
   },
   getStartedButton: {
-    backgroundColor: '#000000',
+    backgroundColor: '#4CAF50',
     paddingHorizontal: 40,
     paddingVertical: 15,
     borderRadius: 8,
@@ -110,10 +110,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 30,
     right: 30,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
   vendorText: {
     fontSize: 16,
-    color: '#666666',
+    color: '#4CAF50',
+    fontWeight: '600',
   },
 });
 

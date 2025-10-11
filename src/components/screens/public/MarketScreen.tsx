@@ -9,6 +9,7 @@ import {
   Alert,
   Animated,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
@@ -23,6 +24,7 @@ interface CustomerHomeProps extends Props {
 const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => {
   const translateY = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showMeatModal, setShowMeatModal] = useState(false);
 
   const handleStallPress = (stall: any) => {
     Alert.alert('Stall Selected', `You selected stall: ${stall?.name || 'Unknown'}`);
@@ -53,9 +55,11 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Toril Public Market</Text>
-        <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        {onLogout && (
+          <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Main Content - Indoor Map */}
@@ -106,16 +110,24 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
             <Text style={styles.categoryButtonText}>Fish</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Pork')}>
-            <Text style={styles.categoryButtonText}>Pork</Text>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => setShowMeatModal(true)}>
+            <Text style={styles.categoryButtonText}>Meat</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Vegetables')}>
-            <Text style={styles.categoryButtonText}>Vegetables</Text>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Vegetables & Fruits')}>
+            <Text style={styles.categoryButtonText}>Vegetables & Fruits</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Rice/Grain')}>
-            <Text style={styles.categoryButtonText}>Rice/Grain</Text>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Rice & Grain')}>
+            <Text style={styles.categoryButtonText}>Rice & Grain</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Grocery')}>
+            <Text style={styles.categoryButtonText}>Grocery</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Dried Fish')}>
+            <Text style={styles.categoryButtonText}>Dried Fish</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -125,6 +137,27 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
           <Text style={styles.searchPlaceholder}>Search Product or Category</Text>
         </View>
       </Animated.View>
+
+      {/* Meat Subcategory Modal */}
+      <Modal visible={showMeatModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowMeatModal(false)}>
+          <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
+            <Text style={styles.modalTitle}>Meat Categories</Text>
+            <TouchableOpacity style={styles.modalItem} onPress={() => { setShowMeatModal(false); handleCategoryPress('Meat'); }}>
+              <Text style={styles.modalItemText}>All Meat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalItem} onPress={() => { setShowMeatModal(false); handleCategoryPress('Pork'); }}>
+              <Text style={styles.modalItemText}>Pork</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalItem} onPress={() => { setShowMeatModal(false); handleCategoryPress('Beef'); }}>
+              <Text style={styles.modalItemText}>Beef</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalItem} onPress={() => { setShowMeatModal(false); handleCategoryPress('Chicken'); }}>
+              <Text style={styles.modalItemText}>Chicken</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Hidden Banner Indicator */}
       {!isExpanded && (
@@ -261,13 +294,13 @@ const styles = StyleSheet.create({
   },
   categoryButtonText: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#333333',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 25,
@@ -278,8 +311,9 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: {
     fontSize: 16,
-    color: '#999999',
+    color: '#666666',
     flex: 1,
+    fontWeight: '500',
   },
   hiddenIndicator: {
     position: 'absolute',
@@ -304,6 +338,36 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  // Modal styles for Meat subcategories
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333333',
+    marginBottom: 12,
+  },
+  modalItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: '#333333',
+    fontWeight: '500',
   },
 });
 

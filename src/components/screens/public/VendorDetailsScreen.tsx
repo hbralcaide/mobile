@@ -28,6 +28,8 @@ interface VendorProduct {
         id: string;
         name: string;
         description?: string;
+        category_id?: string;
+        product_categories?: { name: string } | { name: string }[];
     };
 }
 
@@ -116,7 +118,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             setVendor(vendorWithStall);
 
             // Fetch vendor products
-            const { data: productData, error: productError } = await supabase
+                        const { data: productData, error: productError } = await supabase
                 .from('vendor_products')
                 .select(`
           id,
@@ -126,7 +128,9 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
           products!inner (
             id,
             name,
-            description
+                        description,
+                        category_id,
+                        product_categories ( name )
           )
         `)
                 .eq('vendor_id', vendorId)
@@ -169,14 +173,41 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         );
     };
 
+    const getProductEmoji = (p: VendorProduct): string => {
+        const lower = (s?: string) => (s || '').toLowerCase();
+        const name = lower(p.products?.name);
+        const cat = p.products?.product_categories;
+        const catName = Array.isArray(cat) ? lower(cat[0]?.name) : lower((cat as any)?.name);
+
+        // Beef
+        if (
+            catName?.includes('beef') ||
+            name.includes('beef') || name.includes('baka') || name.includes('brisket') || name.includes('sirloin') || name.includes('tenderloin') ||
+            name.includes('ribeye') || name.includes('ribs') || name.includes('short rib') || name.includes('shank') || name.includes('oxtail') || name.includes('kalitiran')
+        ) return '🐄';
+
+        // Pork
+        if (
+            catName?.includes('pork') ||
+            name.includes('pork') || name.includes('baboy') || name.includes('liempo') || name.includes('lomo') || name.includes('pigue') ||
+            name.includes('pata') || name.includes('tadyang') || name.includes('loin') || name.includes('chop') || name.includes('shoulder')
+        ) return '🐖';
+
+        // Chicken
+        if (
+            catName?.includes('chicken') ||
+            name.includes('chicken') || name.includes('manok') || name.includes('drumstick') || name.includes('thigh') || name.includes('wing') || name.includes('breast')
+        ) return '🍗';
+
+        return '🧺';
+    };
+
     const renderProductItem = ({ item }: { item: VendorProduct }) => (
         <View style={styles.productRow}>
             <View style={styles.productImageContainer}>
-                <Image
-                    source={{ uri: 'https://via.placeholder.com/50x50?text=🐟' }} // Placeholder image
-                    style={styles.productImage}
-                    defaultSource={{ uri: 'https://via.placeholder.com/50x50?text=🐟' }}
-                />
+                <View style={styles.productImage}>
+                    <Text style={styles.productEmoji}>{getProductEmoji(item)}</Text>
+                </View>
             </View>
             <View style={styles.productInfo}>
                 <Text style={styles.productName}>{item.products.name}</Text>
@@ -255,9 +286,11 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
                 {/* Products Header */}
                 <View style={styles.productsHeader}>
-                    <Text style={styles.columnHeader}>Product Name</Text>
-                    <Text style={styles.columnHeader}>Price</Text>
-                    <Text style={styles.columnHeader}>Unit</Text>
+                    {/* Spacer to align with product emoji + row left padding */}
+                    <View style={styles.iconHeaderSpacer} />
+                    <Text style={[styles.columnHeader, styles.nameHeader]}>Product Name</Text>
+                    <Text style={[styles.columnHeader, styles.priceHeader]}>Price</Text>
+                    <Text style={[styles.columnHeader, styles.unitHeader]}>Unit</Text>
                 </View>
 
                 {/* Products List */}
@@ -374,12 +407,25 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         alignItems: 'center',
     },
+    // Width accounts for row's left padding (15) + emoji box (40) + spacing (15) = 70
+    iconHeaderSpacer: {
+        width: 70,
+    },
     columnHeader: {
         color: '#FFFFFF',
         fontWeight: 'bold',
         fontSize: 14,
-        flex: 1,
         textAlign: 'center',
+    },
+    nameHeader: {
+        flex: 1,
+        textAlign: 'left',
+    },
+    priceHeader: {
+        width: 70,
+    },
+    unitHeader: {
+        width: 50,
     },
     productsContainer: {
         backgroundColor: '#4CAF50',
@@ -403,6 +449,11 @@ const styles = StyleSheet.create({
         height: 40,
         borderRadius: 6,
         backgroundColor: '#F0F0F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    productEmoji: {
+        fontSize: 18,
     },
     productInfo: {
         flex: 1,
@@ -417,13 +468,13 @@ const styles = StyleSheet.create({
         color: '#333333',
         fontWeight: '600',
         textAlign: 'center',
-        width: 60,
+        width: 70,
     },
     productUnit: {
         fontSize: 14,
         color: '#333333',
         textAlign: 'center',
-        width: 40,
+        width: 50,
     },
     noProductsContainer: {
         padding: 40,
