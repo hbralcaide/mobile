@@ -28,9 +28,17 @@ interface Product {
   price: number;
   uom: string;
   status: string;
+  vendor_id: string;
+  product_id: string;
   products: {
+    id: string;
     name: string;
     description?: string;
+    category_id: string;
+    product_categories?: {
+      id: string;
+      name: string;
+    }[];
   };
 }
 
@@ -52,6 +60,123 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
       routes: [{ name: 'Home' }]
     });
   };
+
+  // Function to process raw database product into our Product type
+  const processProducts = (rawProducts: any[]): Product[] => {
+    return rawProducts.map(item => ({
+      id: String(item.id),
+      price: Number(item.price),
+      uom: String(item.uom || ''),
+      status: String(item.status),
+      vendor_id: String(item.vendor_id),
+      product_id: String(item.product_id),
+      products: {
+        id: String(item.products?.id || ''),
+        name: String(item.products?.name || ''),
+        description: item.products?.description,
+        category_id: String(item.products?.category_id || ''),
+        product_categories: item.products?.product_categories
+      }
+    }));
+  };
+
+  // Refresh data when returning to the dashboard
+  const refreshData = async () => {
+    const session = SessionManager.getSession();
+    if (!session?.vendorId) {
+      console.log('No session for refresh');
+      return;
+    }
+
+    try {
+      const { data: freshData, error } = await supabase
+        .from('vendor_products')
+        .select(`
+          id,
+          price,
+          uom,
+          status,
+          vendor_id,
+          product_id,
+          products (
+            id,
+            name,
+            description,
+            category_id,
+            product_categories (
+              id,
+              name
+            )
+          )
+        `)
+        .eq('vendor_id', session.vendorId)
+        .not('status', 'eq', 'deleted')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching products:', error);
+        return;
+      }
+
+      const processedProducts = processProducts(freshData || []);
+      setProducts(processedProducts);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+    }
+  };
+
+  // Set up real-time subscription
+  useEffect(() => {
+    const session = SessionManager.getSession();
+    if (!session?.vendorId) return;
+
+    // Subscribe to both vendor_products and products tables
+    const subscription = supabase
+      .channel('product_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vendor_products',
+          filter: `vendor_id=eq.${session.vendorId}`
+        },
+        async (payload) => {
+          console.log('Vendor products update:', payload);
+          if (payload.eventType === 'DELETE' || (payload.new as any)?.status === 'deleted') {
+            // Remove the product from the local state
+            const oldId = (payload.old as any)?.id;
+            if (oldId) {
+              setProducts(prev => prev.filter(p => p.id !== oldId));
+            }
+          } else {
+            // For inserts and updates, refresh all data to ensure consistency
+            await refreshData();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'products',
+        },
+        async (payload) => {
+          console.log('Products update:', payload);
+          // Refresh data when product details change
+          await refreshData();
+        }
+      )
+      .subscribe();
+
+    // Initial data fetch
+    refreshData();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -136,13 +261,18 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         const { data: productData, error: productError } = await supabase
           .from('vendor_products')
           .select(`
-            *,
+            id,
+            price,
+            uom,
+            status,
             products (
+              id,
               name,
               description
             )
           `)
           .eq('vendor_id', vendorData.id)
+          .not('status', 'eq', 'deleted')
           .order('created_at', { ascending: false });
 
         if (productError) {
@@ -150,7 +280,8 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
           setProducts([]);
         } else {
           console.log('Product data with status values:', productData);
-          setProducts(productData || []);
+          const processedProducts = processProducts(productData || []);
+          setProducts(processedProducts);
         }
       } catch (err) {
         console.error('Error fetching data:', err);

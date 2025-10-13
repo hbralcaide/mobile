@@ -613,13 +613,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.noProducts}>No products found.</Text>
-            <TouchableOpacity style={styles.refreshBtn} onPress={fetchProducts}>
-              <Text style={styles.refreshBtnText}>Refresh</Text>
-            </TouchableOpacity>
           </View>
         }
-        refreshing={loading}
-        onRefresh={fetchProducts}
       />
 
       <Modal visible={modalVisible} animationType="slide" transparent>
@@ -951,17 +946,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginBottom: 16,
   },
-  refreshBtn: {
-    backgroundColor: '#22C55E',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  refreshBtnText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
