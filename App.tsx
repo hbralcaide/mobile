@@ -75,7 +75,11 @@ function App(): React.ReactElement {
             component={VendorDashboardScreen}
             options={{ headerTitle: '', title: '' }}
           />
-          <Stack.Screen name="ProductManagement" component={ProductManagementScreen} />
+          <Stack.Screen
+            name="ProductManagement"
+            component={ProductManagementScreen}
+            options={{ headerTitle: '', title: '' }}
+          />
           <Stack.Screen name="ShopProfile" component={ShopProfileScreen} />
         </Stack.Navigator>
       </NavigationContainer>
