@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Swipeable } from 'react-native-gesture-handler';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
+import { Portal, Dialog, Button } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
@@ -26,6 +27,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
   const uomOptions = ['kg', 'piece', 'pack', 'liter', 'box', 'bottle'];
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
 
   // Helper function to get vendor's market section category
   const getVendorCategory = () => {
@@ -495,66 +499,48 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
       name: vendorProduct.products?.name,
       vendor_id: vendorProduct.vendor_id
     });
-    
-    Alert.alert(
-      'Delete Product',
-      `Are you sure you want to delete "${vendorProduct.products?.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingId(vendorProduct.id);
-            try {
-              const session = SessionManager.getSession();
-              if (!session?.vendorId) {
-                setDeletingId(null);
-                Alert.alert('Error', 'Please login again to delete products');
-                return;
-              }
 
-              // Delete the vendor product
-              const { error } = await supabase
-                .from('vendor_products')
-                .delete()
-                .match({ 
-                  id: vendorProduct.id,
-                  vendor_id: session.vendorId 
-                });
+    setDeleteTarget(vendorProduct);
+    setConfirmDeleteVisible(true);
+  };
 
-              console.log('Delete response:', { error });
-              if (error) {
-                console.error('Delete error:', error);
-                Alert.alert('Error', 'Failed to delete product');
-              } else {
-                // First update UI
-                setProducts(prevProducts => 
-                  prevProducts.filter(p => p.id !== vendorProduct.id)
-                );
+  const performDelete = async () => {
+    if (!deleteTarget?.id) {
+      setConfirmDeleteVisible(false);
+      return;
+    }
+    setDeletingId(deleteTarget.id);
+    try {
+      const session = SessionManager.getSession();
+      if (!session?.vendorId) {
+        setDeletingId(null);
+        setConfirmDeleteVisible(false);
+        Alert.alert('Error', 'Please login again to delete products');
+        return;
+      }
 
-                // Update the UI and show success message
-                Alert.alert('Success', 'Product deleted successfully');
-                
-                // Remove from local state immediately
-                setProducts(prevProducts => {
-                  const filtered = prevProducts.filter(p => p.id !== vendorProduct.id);
-                  return filtered;
-                });
-                
-                // Clear the deleting state
-                setDeletingId(null);
-              }
-            } catch (err) {
-              console.error('Delete error:', err);
-              Alert.alert('Error', 'An unexpected error occurred');
-            } finally {
-              setDeletingId(null);
-            }
-          }
-        }
-      ]
-    );
+      const { error } = await supabase
+        .from('vendor_products')
+        .delete()
+        .match({ id: deleteTarget.id, vendor_id: session.vendorId });
+
+      if (error) {
+        console.error('Delete error:', error);
+        setConfirmDeleteVisible(false);
+        Alert.alert('Error', 'Failed to delete product');
+      } else {
+        setProducts(prev => prev.filter(p => p.id !== deleteTarget.id));
+        setConfirmDeleteVisible(false);
+        setInfoDialog({ visible: true, title: 'Success', message: 'Product deleted successfully' });
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      setConfirmDeleteVisible(false);
+      Alert.alert('Error', 'An unexpected error occurred');
+    } finally {
+      setDeletingId(null);
+      setDeleteTarget(null);
+    }
   };
 
   if (loading) {
@@ -863,6 +849,38 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* Themed dialogs */}
+      <Portal>
+        <Dialog visible={confirmDeleteVisible} onDismiss={() => setConfirmDeleteVisible(false)} style={styles.dialogCard}>
+          <Dialog.Title style={styles.dialogTitle}>Delete Product</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogMessage}>
+              Are you sure you want to delete "{deleteTarget?.products?.name}"?
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button mode="outlined" textColor="#64748B" onPress={() => setConfirmDeleteVisible(false)} style={styles.dialogBtn}>
+              Cancel
+            </Button>
+            <Button mode="contained" buttonColor="#DC2626" textColor="#FFFFFF" onPress={performDelete} style={styles.dialogBtn}>
+              Delete
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog visible={infoDialog.visible} onDismiss={() => setInfoDialog({ visible: false, title: '', message: '' })} style={styles.dialogCard}>
+          <Dialog.Title style={[styles.dialogTitle, { color: '#22C55E' }]}>{infoDialog.title}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogMessage}>{infoDialog.message}</Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button mode="contained" buttonColor="#22C55E" textColor="#FFFFFF" onPress={() => setInfoDialog({ visible: false, title: '', message: '' })} style={styles.dialogBtn}>
+              OK
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 };
@@ -1232,6 +1250,23 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 16,
     fontWeight: '600',
+  },
+  dialogCard: {
+    borderRadius: 16,
+  },
+  dialogTitle: {
+    color: '#1E293B',
+    fontWeight: '700',
+  },
+  dialogMessage: {
+    color: '#374151',
+    fontSize: 14,
+  },
+  dialogActions: {
+    gap: 8,
+  },
+  dialogBtn: {
+    borderRadius: 10,
   },
 });
 
