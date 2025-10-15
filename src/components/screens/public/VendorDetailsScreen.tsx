@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -54,6 +54,28 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
     useEffect(() => {
         fetchVendorDetails();
+
+        // Supabase Realtime subscription for vendor_products
+        const channel = supabase.channel(`vendor-products-vendor-${vendorId}`);
+        channel
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'vendor_products',
+                    filter: `vendor_id=eq.${vendorId}`,
+                },
+                (payload) => {
+                    // On insert/update/delete, re-fetch products
+                    fetchVendorDetails();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
     }, [vendorId]);
 
     useEffect(() => {

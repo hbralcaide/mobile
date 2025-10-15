@@ -70,7 +70,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         }
 
         // Get the vendor profile using the vendor ID from session (since actual occupant shares same vendor profile)
-        console.log('Fetching vendor data for ID:', session.vendorId);
+        console.log('🔍 Dashboard: Fetching vendor data for ID:', session.vendorId);
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
           .select(`
@@ -92,7 +92,8 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
           return;
         }
 
-        console.log('Vendor data:', vendorData);
+        console.log('✅ Dashboard: Vendor data fetched:', vendorData);
+        console.log('📋 Dashboard: Business name is:', vendorData.business_name);
 
         // Fetch stall information separately
         let stallData = null;

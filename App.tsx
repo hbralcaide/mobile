@@ -32,8 +32,16 @@ function App(): React.ReactElement {
       <NavigationContainer linking={linkingConfig}>
         <Stack.Navigator initialRouteName="Home">
           {/* Public Routes */}
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Market" component={MarketScreen} />
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{ headerTitle: '', title: '' }}
+          />
+          <Stack.Screen
+            name="Market"
+            component={MarketScreen}
+            options={{ headerTitle: '', title: '' }}
+          />
           <Stack.Screen name="CategoryList" component={CategoryListScreen} />
           <Stack.Screen name="ProductList" component={ProductListScreen} />
           <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
@@ -62,7 +70,11 @@ function App(): React.ReactElement {
           />
 
           {/* Vendor Routes */}
-          <Stack.Screen name="VendorDashboard" component={VendorDashboardScreen} />
+          <Stack.Screen
+            name="VendorDashboard"
+            component={VendorDashboardScreen}
+            options={{ headerTitle: '', title: '' }}
+          />
           <Stack.Screen name="ProductManagement" component={ProductManagementScreen} />
           <Stack.Screen name="ShopProfile" component={ShopProfileScreen} />
         </Stack.Navigator>

@@ -27,6 +27,7 @@ interface VendorInfo {
     productCount: number;
     availableProductCount: number;
     meatTypes?: { pork: boolean; beef: boolean; chicken: boolean };
+    operating_hours?: string;
 }
 
 const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
@@ -38,6 +39,27 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
 
     useEffect(() => {
         fetchVendorsByCategory();
+
+        // Supabase Realtime subscription for vendor_products
+        const channel = supabase.channel(`vendor-products-category-${category}`);
+        channel
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'vendor_products',
+                },
+                (payload) => {
+                    // On insert/update/delete, re-fetch vendor list
+                    fetchVendorsByCategory();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
     }, [category]);
 
     const fetchVendorsByCategory = async () => {
@@ -56,7 +78,8 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             business_name,
             phone_number,
             stall_number,
-            complete_address
+            complete_address,
+            operating_hours
           ),
           products!inner (
             id,
@@ -174,6 +197,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                         availableProductCount: 0,
                         stall: null,
                         meatTypes: { pork: false, beef: false, chicken: false },
+                        operating_hours: item.vendor_profiles.operating_hours,
                     });
                 }
 
@@ -283,6 +307,34 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             return item.availableProductCount > 0 ? 'Open' : 'Closed';
         };
 
+        // Format operating hours from JSON schedule
+        const getOperatingHours = () => {
+            if (!item.operating_hours) {
+                console.log(`🕒 No operating hours for vendor ${item.business_name}`);
+                return '6:00 AM - 6:00 PM'; // Default
+            }
+            try {
+                const schedule = JSON.parse(item.operating_hours);
+                console.log(`🕒 Operating hours for ${item.business_name}:`, schedule);
+                const today = new Date().getDay(); // 0=Sunday, 6=Saturday
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const dayName = days[today];
+                console.log(`🕒 Today is ${dayName} (${today})`);
+                const daySchedule = schedule[dayName];
+                console.log(`🕒 Schedule for ${dayName}:`, daySchedule);
+                if (daySchedule && daySchedule.open) {
+                    const hours = `${daySchedule.start} - ${daySchedule.end}`;
+                    console.log(`🕒 Showing hours: ${hours}`);
+                    return hours;
+                }
+                console.log(`🕒 Closed today`);
+                return 'Closed today';
+            } catch (error) {
+                console.error(`🕒 Error parsing operating hours for ${item.business_name}:`, error);
+                return '6:00 AM - 6:00 PM'; // Fallback if JSON is invalid
+            }
+        };
+
         return (
             <TouchableOpacity style={styles.stallCard} onPress={() => handleVendorPress(item)}>
                 <View style={styles.stallHeader}>
@@ -295,6 +347,10 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                             {item.stall?.location_description && (
                                 <Text style={styles.stallLocation}> • {item.stall.location_description}</Text>
                             )}
+                        </View>
+                        <View style={styles.operatingHoursRow}>
+                            <Text style={styles.operatingHoursIcon}>🕒</Text>
+                            <Text style={styles.operatingHoursText}>{getOperatingHours()}</Text>
                         </View>
                     </View>
                     <View style={styles.badgesRight}>
@@ -511,6 +567,20 @@ const styles = StyleSheet.create({
     stallLocation: {
         fontSize: 14,
         color: '#666666',
+    },
+    operatingHoursRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    operatingHoursIcon: {
+        fontSize: 12,
+        marginRight: 4,
+    },
+    operatingHoursText: {
+        fontSize: 12,
+        color: '#DC2626',
+        fontWeight: '500',
     },
     statusDot: {
         width: 12,

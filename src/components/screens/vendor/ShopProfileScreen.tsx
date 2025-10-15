@@ -281,22 +281,32 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       const payload: any = {
         business_name: formData.businessName,
         phone_number: formData.contactNo,
+        operating_hours: serialized, // Always save the serialized schedule
       };
-      if (formData.operatingHours) payload.operating_hours = formData.operatingHours;
       if (publicUrl) payload.profile_image_url = publicUrl;
 
       if (!session?.vendorId) {
         throw new Error('No vendor session found');
       }
 
-      const { error: updateError } = await supabase
+      console.log('📝 Updating vendor profile with payload:', payload);
+      console.log('🔑 Session vendorId:', session.vendorId);
+      console.log('👤 Current auth user:', (await supabase.auth.getUser()).data.user?.id);
+      
+      const { data: updateData, error: updateError } = await supabase
         .from('vendor_profiles')
         .update(payload)
-        .eq('id', session.vendorId);
+        .eq('id', session.vendorId)
+        .select();
+
+      console.log('Update response:', { updateData, updateError });
 
       if (updateError) {
         console.error('Failed to update vendor profile', updateError);
         Alert.alert('Save failed', 'Could not save profile. Please try again.');
+      } else if (!updateData || updateData.length === 0) {
+        console.error('No rows updated - possible RLS issue or wrong vendorId');
+        Alert.alert('Save failed', 'No changes were saved. Please check permissions.');
       } else {
         // update local vendor state
         setVendor((prev) => prev ? ({ ...prev, business_name: formData.businessName, phone_number: formData.contactNo, /* keep other fields */ }) : prev);
@@ -310,7 +320,15 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         } catch (e) {
           // ignore
         }
-        Alert.alert('Saved', 'Profile updated successfully');
+        Alert.alert('Saved', 'Profile updated successfully', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate back to dashboard to trigger refresh
+              navigation.goBack();
+            }
+          }
+        ]);
       }
     } catch (err) {
       console.error(err);
