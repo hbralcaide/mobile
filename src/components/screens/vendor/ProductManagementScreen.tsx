@@ -1,6 +1,7 @@
 //Product Management screen
 
 import React, { useEffect, useState } from 'react';
+import { Swipeable } from 'react-native-gesture-handler';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
@@ -16,6 +17,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [modalVisible, setModalVisible] = useState(false);
   const [editProduct, setEditProduct] = useState<any | null>(null);
   const [form, setForm] = useState({ name: '', price: '', category_id: '', uom: '', status: 'Available' });
+  const [activeTab, setActiveTab] = useState<'available' | 'unavailable'>('available');
   const [showProductNameDropdown, setShowProductNameDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showUomDropdown, setShowUomDropdown] = useState(false);
@@ -575,44 +577,84 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     );
   }
 
+  // Counts for tabs
+  const availableCount = products.filter(p => (p.status || '').toLowerCase() === 'available').length;
+  const unavailableCount = products.filter(p => (p.status || '').toLowerCase() === 'unavailable').length;
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Product Management</Text>
       <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
         <Text style={styles.addBtnText}>+ Add Product</Text>
       </TouchableOpacity>
+
+      {/* Tabs: Available | Unavailable */}
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'available' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('available')}
+        >
+          <Text style={[
+            styles.tabText,
+            activeTab === 'available' ? styles.tabTextActive : styles.tabTextInactive,
+          ]}>Available ({availableCount})</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'unavailable' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('unavailable')}
+        >
+          <Text style={[
+            styles.tabText,
+            activeTab === 'unavailable' ? styles.tabTextActive : styles.tabTextInactive,
+          ]}>Unavailable ({unavailableCount})</Text>
+        </TouchableOpacity>
+      </View>
       <FlatList
-        data={products}
+        data={products.filter(p => {
+          const status = (p.status || '').toLowerCase();
+          return activeTab === 'available' ? status === 'available' : status === 'unavailable';
+        })}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={[styles.productRow, item.status === 'unavailable' && styles.productRowUnavailable]}>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{item.products?.name}</Text>
-              <Text style={styles.productCategory}>
-                {item.products?.product_categories?.name || 'No Category'}
-              </Text>
-            </View>
-            <Text style={styles.productPrice}>{item.price}/{item.uom || 'piece'}</Text>
-            <Text style={[styles.statusBadge, item.status === 'available' ? styles.statusActive : styles.statusInactive]}>
-              {item.status === 'available' ? 'Available' : 'Unavailable'}
-            </Text>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
-              <Text style={styles.iconText}>✏️</Text>
-            </TouchableOpacity>
+          <Swipeable
+            renderRightActions={() => (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.rightAction}
+                onPress={() => handleDelete(item)}
+              >
+                <Text style={styles.rightActionText}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            onSwipeableOpen={() => handleDelete(item)}
+          >
             <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() => handleDelete(item)}
-              disabled={deletingId === item.id}
+              activeOpacity={0.8}
+              onPress={() => openEditModal(item)}
+              style={[styles.productRow, item.status === 'unavailable' && styles.productRowUnavailable]}
             >
-              <Text style={styles.iconText}>
-                {deletingId === item.id ? '⏳' : '🗑️'}
-              </Text>
+              <View style={styles.productInfo}>
+                <Text style={styles.productName} numberOfLines={1} ellipsizeMode="tail">{item.products?.name}</Text>
+                <Text style={styles.productCategory} numberOfLines={1} ellipsizeMode="tail">
+                  {item.products?.product_categories?.name || 'No Category'}
+                </Text>
+              </View>
+              <Text style={styles.productPrice}>{item.price}/{item.uom || 'piece'}</Text>
+              <View
+                style={[
+                  styles.statusDot,
+                  ((item.status || '').toLowerCase() === 'available')
+                    ? styles.statusDotAvailable
+                    : styles.statusDotUnavailable,
+                ]}
+              />
             </TouchableOpacity>
-          </View>
+          </Swipeable>
         )}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.noProducts}>No products found.</Text>
+            <Text style={styles.noProducts}>
+              {activeTab === 'available' ? 'No available products.' : 'No unavailable products.'}
+            </Text>
           </View>
         }
       />
@@ -811,11 +853,11 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
             </View>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={saving}>
-                <Text style={styles.submitBtnText}>{saving ? 'Saving...' : 'Submit'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelBtn} onPress={closeModal}>
+              <TouchableOpacity style={[styles.cancelBtn, { flex: 1 }]} onPress={closeModal} disabled={saving}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitBtn, { flex: 1 }]} onPress={handleSave} disabled={saving}>
+                <Text style={styles.submitBtnText}>{saving ? 'Saving...' : (editProduct ? 'Save' : 'Add')}</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -897,16 +939,19 @@ const styles = StyleSheet.create({
   },
   productInfo: {
     flex: 1,
+    marginRight: 8,
   },
   productName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1E293B',
     marginBottom: 4,
+    flexShrink: 1,
   },
   productCategory: {
     fontSize: 14,
     color: '#64748B',
+    flexShrink: 1,
   },
   productPrice: {
     fontSize: 16,
@@ -914,21 +959,17 @@ const styles = StyleSheet.create({
     color: '#059669',
     marginRight: 12,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    fontSize: 12,
-    fontWeight: '600',
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     marginRight: 12,
   },
-  statusActive: {
-    backgroundColor: '#DCFCE7',
-    color: '#166534',
+  statusDotAvailable: {
+    backgroundColor: '#22C55E',
   },
-  statusInactive: {
-    backgroundColor: '#FEE2E2',
-    color: '#DC2626',
+  statusDotUnavailable: {
+    backgroundColor: '#94A3B8',
   },
   iconBtn: {
     padding: 8,
@@ -936,6 +977,20 @@ const styles = StyleSheet.create({
   },
   iconText: {
     fontSize: 18,
+  },
+  rightAction: {
+    width: 96,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    marginVertical: 6,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  rightActionText: {
+    color: '#DC2626',
+    fontSize: 16,
+    fontWeight: '700',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -945,6 +1000,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748B',
     marginBottom: 16,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabButtonActive: {
+    borderBottomColor: '#22C55E',
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#22C55E',
+  },
+  tabTextInactive: {
+    color: '#94A3B8',
   },
 
   modalOverlay: {
@@ -960,6 +1040,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxHeight: '90%',
+    overflow: 'hidden',
   },
   modalTitleCustom: {
     fontSize: 20,
@@ -1128,6 +1209,7 @@ const styles = StyleSheet.create({
   modalButtons: {
     marginTop: 24,
     gap: 12,
+    flexDirection: 'row',
   },
   submitBtn: {
     backgroundColor: '#22C55E',

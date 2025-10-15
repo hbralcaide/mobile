@@ -78,7 +78,10 @@ function App(): React.ReactElement {
           <Stack.Screen
             name="ProductManagement"
             component={ProductManagementScreen}
-            options={{ headerTitle: '', title: '' }}
+            options={{
+              headerTitle: 'Product Management',
+              headerTitleAlign: 'center',
+            }}
           />
           <Stack.Screen name="ShopProfile" component={ShopProfileScreen} />
         </Stack.Navigator>
