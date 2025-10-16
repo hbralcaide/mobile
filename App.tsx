@@ -73,7 +73,10 @@ function App(): React.ReactElement {
           <Stack.Screen
             name="VendorDashboard"
             component={VendorDashboardScreen}
-            options={{ headerTitle: '', title: '' }}
+            options={{
+              headerShown: false,
+              gestureEnabled: false,
+            }}
           />
           <Stack.Screen
             name="ProductManagement"

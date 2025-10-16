@@ -3,11 +3,15 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+import RNFS from 'react-native-fs';
 import { SessionManager } from '../../../utils/sessionManager';
 import { launchImageLibrary, launchCamera, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
+
+// Storage bucket for vendor avatar images (separate from other profile assets)
+const AVATAR_BUCKET = 'vendor-avatars';
 
 interface VendorProfile {
   id: string;
@@ -28,7 +32,8 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null); // preview
+  const [profileUploadUri, setProfileUploadUri] = useState<string | null>(null); // file URI for upload
 
   // Get the current session to show logged-in user's info
   const session = SessionManager.getSession();
@@ -178,15 +183,21 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           if (response.didCancel || response.errorMessage) return;
           if (response.assets && response.assets[0]) {
             const asset = response.assets[0];
-            if (asset.base64 && session?.vendorId) {
-              try {
+            try {
+              if (asset.base64 && session?.vendorId) {
+                // Cache latest avatar locally for fallback views
                 await AsyncStorage.setItem(`vendor_avatar_${session.vendorId}`, asset.base64);
-                setProfileImage(`data:${asset.type || 'image/jpeg'};base64,${asset.base64}`);
-              } catch (e) {
-                console.warn('Failed to save avatar locally', e);
-                setProfileImage(asset.uri || null);
+                const mime = asset.type || 'image/jpeg';
+                setProfileImage(`data:${mime};base64,${asset.base64}`);
               }
-            } else {
+              if (asset.uri) {
+                setProfileUploadUri(asset.uri);
+                if (!asset.base64) setProfileImage(asset.uri);
+              } else {
+                Alert.alert('Error', 'Could not get image from picker.');
+              }
+            } catch (e) {
+              console.warn('Failed handling picked image', e);
               setProfileImage(asset.uri || null);
             }
           }
@@ -225,15 +236,20 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           if (response.didCancel || response.errorMessage) return;
           if (response.assets && response.assets[0]) {
             const asset = response.assets[0];
-            if (asset.base64 && session?.vendorId) {
-              try {
+            try {
+              if (asset.base64 && session?.vendorId) {
                 await AsyncStorage.setItem(`vendor_avatar_${session.vendorId}`, asset.base64);
-                setProfileImage(`data:${asset.type || 'image/jpeg'};base64,${asset.base64}`);
-              } catch (e) {
-                console.warn('Failed to save avatar locally', e);
-                setProfileImage(asset.uri || null);
+                const mime = asset.type || 'image/jpeg';
+                setProfileImage(`data:${mime};base64,${asset.base64}`);
               }
-            } else {
+              if (asset.uri) {
+                setProfileUploadUri(asset.uri);
+                if (!asset.base64) setProfileImage(asset.uri);
+              } else {
+                Alert.alert('Error', 'Could not get image from camera.');
+              }
+            } catch (e) {
+              console.warn('Failed handling captured image', e);
               setProfileImage(asset.uri || null);
             }
           }
@@ -252,6 +268,8 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const saveProfile = async () => {
+  Alert.alert('Debug', 'saveProfile called: starting image upload logic');
+  console.log('DEBUG: saveProfile called, starting image upload logic');
     setLoading(true);
     try {
       // serialize schedule into formData
@@ -259,22 +277,77 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       setFormData((prev) => ({ ...prev, operatingHours: serialized }));
 
       let publicUrl: string | null = null;
-      if (profileImage) {
-        try {
-          // fetch the local file and convert to blob
-          const response = await fetch(profileImage);
-          const blob = await response.blob();
-          const filename = `avatars/${session?.vendorId || 'unknown'}_${Date.now()}.jpg`;
-          const { error: uploadError } = await supabase.storage.from('vendor-avatars').upload(filename, blob, { upsert: true });
-          if (uploadError) {
-            console.warn('Upload error', uploadError);
-          } else {
-            const { data } = supabase.storage.from('vendor-avatars').getPublicUrl(filename);
-            publicUrl = data?.publicUrl || null;
-          }
-        } catch (err) {
-          console.warn('Failed to upload profile image', err);
+      // Helper: minimal base64 -> ArrayBuffer
+      const b64ToArrayBuffer = (b64: string): ArrayBuffer => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+        let str = b64.replace(/[^A-Za-z0-9+/=]/g, '');
+        let outputLength = (str.length * 3) / 4;
+        if (str.endsWith('==')) outputLength -= 2;
+        else if (str.endsWith('=')) outputLength -= 1;
+        const bytes = new Uint8Array(outputLength);
+        let p = 0;
+        for (let i = 0; i < str.length; i += 4) {
+          const enc1 = chars.indexOf(str[i]);
+          const enc2 = chars.indexOf(str[i + 1]);
+          const enc3 = chars.indexOf(str[i + 2]);
+          const enc4 = chars.indexOf(str[i + 3]);
+          const chr1 = (enc1 << 2) | (enc2 >> 4);
+          const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+          const chr3 = ((enc3 & 3) << 6) | enc4;
+          bytes[p++] = chr1;
+          if (enc3 !== 64 && p < bytes.length) bytes[p++] = chr2;
+          if (enc4 !== 64 && p < bytes.length) bytes[p++] = chr3;
         }
+        return bytes.buffer;
+      };
+
+      // Prepare binary data for upload using base64 preferred, else read file path as base64
+      try {
+        let base64Data: string | null = null;
+        let detectedMime: string | null = null;
+        // If preview is data URL, extract base64
+        if (profileImage && profileImage.startsWith('data:')) {
+          const commaIdx = profileImage.indexOf(',');
+          const header = profileImage.substring(5, commaIdx); // e.g. image/png;base64
+          const semi = header.indexOf(';');
+          detectedMime = semi > -1 ? header.substring(0, semi) : header;
+          base64Data = profileImage.slice(commaIdx + 1);
+        }
+        // Else, if we have a file URI, read it as base64
+        if (!base64Data && profileUploadUri) {
+          const filePath = profileUploadUri.replace('file://', '');
+          base64Data = await RNFS.readFile(filePath, 'base64');
+          // best-effort detect by extension
+          const lower = filePath.toLowerCase();
+          if (lower.endsWith('.png')) detectedMime = 'image/png';
+          else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) detectedMime = 'image/jpeg';
+        }
+
+        if (base64Data) {
+          const arrayBuffer = b64ToArrayBuffer(base64Data);
+          const mime = detectedMime || 'image/jpeg';
+          const ext = mime === 'image/png' ? 'png' : 'jpg';
+          const filename = `avatars/${session?.vendorId || 'unknown'}_${Date.now()}.${ext}`;
+          console.log('🖼️ Attempting upload to Supabase:', filename);
+          const { error: uploadError } = await supabase.storage
+            .from(AVATAR_BUCKET)
+            .upload(filename, arrayBuffer, { upsert: false, contentType: mime });
+          if (uploadError) {
+            console.warn('Upload error (arrayBuffer path):', uploadError.message || uploadError);
+            Alert.alert('Upload Error', uploadError.message || JSON.stringify(uploadError));
+          } else {
+            const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filename);
+            publicUrl = data?.publicUrl || null;
+            console.log('🖼️ Uploaded image publicUrl:', publicUrl);
+            Alert.alert('Upload Success', 'Image uploaded to Supabase!');
+          }
+        } else {
+          console.log('🖼️ No image data found to upload');
+          Alert.alert('Upload Error', 'No image data found to upload');
+        }
+      } catch (e) {
+        console.warn('Failed during file read/upload:', e);
+        Alert.alert('Upload Exception', String(e));
       }
 
       // prepare update payload
@@ -284,6 +357,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         operating_hours: serialized, // Always save the serialized schedule
       };
       if (publicUrl) payload.profile_image_url = publicUrl;
+      else console.warn('🖼️ No profile_image_url will be saved (publicUrl is null)');
 
       if (!session?.vendorId) {
         throw new Error('No vendor session found');
@@ -300,6 +374,9 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         .select();
 
       console.log('Update response:', { updateData, updateError });
+      if (updateData) {
+        console.log('🖼️ Database profile_image_url after update:', updateData[0]?.profile_image_url);
+      }
 
       if (updateError) {
         console.error('Failed to update vendor profile', updateError);

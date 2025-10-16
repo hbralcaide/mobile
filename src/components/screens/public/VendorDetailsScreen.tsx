@@ -51,6 +51,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [profileImage, setProfileImage] = useState<string | null>(null);
 
     useEffect(() => {
         fetchVendorDetails();
@@ -98,7 +99,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             // Fetch vendor profile with stall_number from vendor_profiles table
             const { data: vendorData, error: vendorError } = await supabase
                 .from('vendor_profiles')
-                .select('id, business_name, phone_number, stall_number, complete_address')
+                .select('id, business_name, phone_number, stall_number, complete_address, profile_image_url')
                 .eq('id', vendorId)
                 .single();
 
@@ -138,6 +139,12 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             };
 
             setVendor(vendorWithStall);
+            
+            // Set profile image if available with cache-busting
+            if (vendorData.profile_image_url) {
+                const cacheBuster = `?v=${Date.now()}`;
+                setProfileImage(vendorData.profile_image_url + cacheBuster);
+            }
 
             // Fetch vendor products
                         const { data: productData, error: productError } = await supabase
@@ -239,6 +246,38 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
     );
 
+    const getOperatingHours = () => {
+        if (!vendor || !('operating_hours' in vendor) || !vendor.operating_hours) return { text: '6:00 AM - 6:00 PM', online: false };
+        try {
+            const schedule = JSON.parse((vendor as any).operating_hours);
+            const today = new Date();
+            const dayIdx = today.getDay();
+            const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            const dayName = days[dayIdx];
+            const daySchedule = schedule[dayName];
+            if (daySchedule && daySchedule.open) {
+                const [startHour, startMin] = daySchedule.start.split(/:| /).map(Number);
+                const [endHour, endMin] = daySchedule.end.split(/:| /).map(Number);
+                const start = new Date(today);
+                const end = new Date(today);
+                start.setHours(startHour, isNaN(startMin) ? 0 : startMin, 0, 0);
+                end.setHours(endHour, isNaN(endMin) ? 0 : endMin, 0, 0);
+                const now = today.getTime();
+                const online = now >= start.getTime() && now <= end.getTime();
+                return { text: `${daySchedule.start} - ${daySchedule.end}`, online };
+            }
+            return { text: 'Closed today', online: false };
+        } catch (error) {
+            return { text: '6:00 AM - 6:00 PM', online: false };
+        }
+    };
+                        {(() => {
+                            const hours = getOperatingHours();
+                            return (
+                                <Text style={[styles.detailTime, { color: hours.online ? '#22C55E' : '#E53935' }]}>⏰ {hours.text}</Text>
+                            );
+                        })()}
+
     if (loading) {
         return (
             <View style={styles.centered}>
@@ -274,7 +313,11 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                 {/* Vendor Profile Section */}
                 <View style={styles.profileSection}>
                     <View style={styles.profileImageContainer}>
-                        <View style={styles.profileImagePlaceholder} />
+                        {profileImage ? (
+                            <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                        ) : (
+                            <View style={styles.profileImagePlaceholder} />
+                        )}
                     </View>
 
                     <Text style={styles.vendorName}>{vendor.business_name}</Text>
@@ -285,7 +328,6 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                                 🏪 Stall {vendor.stall.stall_number}, {vendor.stall.location_description || 'West Section'}
                             </Text>
                         )}
-                        <Text style={styles.detailText}>⏰ 5:00 AM - 5:00 PM</Text>
                         {vendor.phone_number && (
                             <Text style={styles.detailText}>📞 Contact No.: {vendor.phone_number}</Text>
                         )}
@@ -376,12 +418,19 @@ const styles = StyleSheet.create({
     profileImageContainer: {
         marginBottom: 16,
     },
+    profileImage: {
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        borderWidth: 4,
+        borderColor: '#4CAF50',
+    },
     profileImagePlaceholder: {
-        width: 120,
-        height: 80,
+        width: 140,
+        height: 140,
         backgroundColor: '#E5E5E5',
-        borderRadius: 12,
-        borderWidth: 3,
+        borderRadius: 70,
+        borderWidth: 4,
         borderColor: '#4CAF50',
     },
     vendorName: {
@@ -399,6 +448,13 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666666',
         textAlign: 'center',
+    },
+    detailTime: {
+        fontSize: 16,
+        color: '#E53935',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginVertical: 2,
     },
     searchContainer: {
         paddingHorizontal: 20,

@@ -244,7 +244,9 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
         // try to set profile image: prefer remote URL from DB, fallback to local AsyncStorage
         if (vendorWithStall?.profile_image_url) {
-          setProfileImage(vendorWithStall.profile_image_url);
+          // Add cache-busting parameter to ensure fresh image after upload
+          const cacheBuster = `?v=${Date.now()}`;
+          setProfileImage(vendorWithStall.profile_image_url + cacheBuster);
         } else {
           try {
             const local = await AsyncStorage.getItem(`vendor_avatar_${session.vendorId}`);

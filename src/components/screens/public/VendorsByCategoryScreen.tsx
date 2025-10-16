@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { TextInput } from 'react-native';
 import {
     View,
     Text,
@@ -9,17 +10,19 @@ import {
     Alert,
     SafeAreaView,
     StatusBar,
+    Image,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VendorsByCategory'>;
 
 interface VendorInfo {
     id: string;
     business_name: string;
-    contact_number?: string; // We'll map phone_number to this for consistency
+    contact_number?: string;
     stall?: {
         stall_number: string;
         location_description?: string;
@@ -28,11 +31,14 @@ interface VendorInfo {
     availableProductCount: number;
     meatTypes?: { pork: boolean; beef: boolean; chicken: boolean };
     operating_hours?: string;
+    profile_image_url?: string;
+    products?: { name: string; description?: string }[];
 }
 
 const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
     const { category } = route.params;
     const [vendors, setVendors] = useState<VendorInfo[]>([]);
+    const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sortMode, setSortMode] = useState<'alpha' | 'stall'>('alpha'); // toggle between alphabetical and stall number
@@ -79,7 +85,8 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             phone_number,
             stall_number,
             complete_address,
-            operating_hours
+            operating_hours,
+            profile_image_url
           ),
           products!inner (
             id,
@@ -188,6 +195,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
 
                 if (!matchesCategory) return; // Skip vendors that don't match the category
 
+
                 if (!vendorMap.has(vendorId)) {
                     vendorMap.set(vendorId, {
                         id: vendorId,
@@ -198,10 +206,16 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                         stall: null,
                         meatTypes: { pork: false, beef: false, chicken: false },
                         operating_hours: item.vendor_profiles.operating_hours,
+                        profile_image_url: item.vendor_profiles.profile_image_url,
+                        products: [],
                     });
                 }
 
                 const vendor = vendorMap.get(vendorId);
+                // Add product to vendor's products array for search
+                if (item.products && item.products.name) {
+                    vendor.products.push({ name: item.products.name, description: item.products.description });
+                }
                 vendor.productCount += 1;
                 if (isAvailable) {
                     vendor.availableProductCount += 1;
@@ -273,8 +287,19 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
     };
 
     // Derived sorted vendors by selected numeric mode
-    const sortedVendors = useMemo(() => {
-        const list = [...vendors];
+    // Filter and sort vendors by search and sort mode
+    const filteredVendors = useMemo(() => {
+        let list = [...vendors];
+        if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            list = list.filter(vendor => {
+                // Check if any product matches search
+                if (vendor.products && Array.isArray(vendor.products)) {
+                    return vendor.products.some((prod: any) => prod.name && prod.name.toLowerCase().includes(q));
+                }
+                return false;
+            });
+        }
         const normalizeName = (s?: string) => (s || '').toString().toLowerCase();
         const stallKey = (stallNo?: string) => {
             const s = (stallNo || '').toString();
@@ -283,7 +308,6 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             const prefix = (s.match(/[A-Za-z]+/) || ['zzz'])[0];
             return { prefix, num };
         };
-
         if (sortMode === 'alpha') {
             return list.sort((a, b) => normalizeName(a.business_name).localeCompare(normalizeName(b.business_name)));
         }
@@ -294,82 +318,85 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
             if (ka.prefix !== kb.prefix) return ka.prefix.localeCompare(kb.prefix);
             return ka.num - kb.num;
         });
-    }, [vendors, sortMode]);
+    }, [vendors, sortMode, search]);
 
     const renderVendorCard = ({ item }: { item: VendorInfo }) => {
         // Determine status color based on available products
         const getStatusColor = () => {
-            if (item.availableProductCount > 0) return '#4CAF50'; // Green for available
-            return '#F44336'; // Red for unavailable
-        };
-
-        const getStatusText = () => {
-            return item.availableProductCount > 0 ? 'Open' : 'Closed';
+            if (item.availableProductCount > 0) return '#22C55E'; // Green for available
+            return '#DC2626'; // Red for unavailable
         };
 
         // Format operating hours from JSON schedule
         const getOperatingHours = () => {
-            if (!item.operating_hours) {
-                console.log(`🕒 No operating hours for vendor ${item.business_name}`);
-                return '6:00 AM - 6:00 PM'; // Default
-            }
+            if (!item.operating_hours) return { text: '6:00 AM - 6:00 PM', online: false };
             try {
                 const schedule = JSON.parse(item.operating_hours);
-                console.log(`🕒 Operating hours for ${item.business_name}:`, schedule);
-                const today = new Date().getDay(); // 0=Sunday, 6=Saturday
+                const today = new Date();
+                const dayIdx = today.getDay();
                 const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-                const dayName = days[today];
-                console.log(`🕒 Today is ${dayName} (${today})`);
+                const dayName = days[dayIdx];
                 const daySchedule = schedule[dayName];
-                console.log(`🕒 Schedule for ${dayName}:`, daySchedule);
                 if (daySchedule && daySchedule.open) {
-                    const hours = `${daySchedule.start} - ${daySchedule.end}`;
-                    console.log(`🕒 Showing hours: ${hours}`);
-                    return hours;
+                    // Parse start/end times
+                    const [startHour, startMin] = daySchedule.start.split(/:| /).map(Number);
+                    const [endHour, endMin] = daySchedule.end.split(/:| /).map(Number);
+                    const start = new Date(today);
+                    const end = new Date(today);
+                    start.setHours(startHour, isNaN(startMin) ? 0 : startMin, 0, 0);
+                    end.setHours(endHour, isNaN(endMin) ? 0 : endMin, 0, 0);
+                    const now = today.getTime();
+                    const online = now >= start.getTime() && now <= end.getTime();
+                    return { text: `${daySchedule.start} - ${daySchedule.end}`, online };
                 }
-                console.log(`🕒 Closed today`);
-                return 'Closed today';
+                return { text: 'Closed today', online: false };
             } catch (error) {
-                console.error(`🕒 Error parsing operating hours for ${item.business_name}:`, error);
-                return '6:00 AM - 6:00 PM'; // Fallback if JSON is invalid
+                return { text: '6:00 AM - 6:00 PM', online: false };
             }
+        };
+
+        // Get location text
+        const getLocation = () => {
+            if (item.stall?.location_description) return item.stall.location_description;
+            return '';
         };
 
         return (
             <TouchableOpacity style={styles.stallCard} onPress={() => handleVendorPress(item)}>
                 <View style={styles.stallHeader}>
+                    <View style={styles.avatarBox}>
+                        {item.profile_image_url ? (
+                            <Image 
+                                source={{ uri: item.profile_image_url }} 
+                                style={styles.avatarImage}
+                                onError={() => console.log('Failed to load vendor avatar')}
+                            />
+                        ) : (
+                            <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarInitial}>
+                                    {item.business_name.charAt(0).toUpperCase()}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
                     <View style={styles.stallTitleSection}>
                         <Text style={styles.stallName}>{item.business_name}</Text>
-                        <View style={styles.stallLocationRow}>
-                            <Text style={styles.stallNumber}>
-                                {item.stall?.stall_number ? `Stall ${item.stall.stall_number}` : 'No Stall'}
-                            </Text>
-                            {item.stall?.location_description && (
-                                <Text style={styles.stallLocation}> • {item.stall.location_description}</Text>
-                            )}
-                        </View>
+                        <Text style={styles.stallNumber}>
+                            {item.stall?.stall_number ? `Stall ${item.stall.stall_number}` : 'No Stall'}
+                        </Text>
+                        <Text style={styles.stallLocation}>{getLocation()}</Text>
                         <View style={styles.operatingHoursRow}>
                             <Text style={styles.operatingHoursIcon}>🕒</Text>
-                            <Text style={styles.operatingHoursText}>{getOperatingHours()}</Text>
+                            {(() => {
+                                const hours = getOperatingHours();
+                                return (
+                                    <Text style={[styles.operatingHoursText, { color: hours.online ? '#22C55E' : '#DC2626' }]}>{hours.text}</Text>
+                                );
+                            })()}
                         </View>
                     </View>
-                    <View style={styles.badgesRight}>
-                        {(() => {
-                            const icons: string[] = [];
-                            if (item.meatTypes?.pork) icons.push('🐖');
-                            if (item.meatTypes?.beef) icons.push('🐄');
-                            if (item.meatTypes?.chicken) icons.push('🍗');
-                            return icons.map((ic, idx) => (
-                                <Text key={idx} style={styles.badgeIcon}>{ic}</Text>
-                            ));
-                        })()}
-                        <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
-                    </View>
+                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(), marginLeft: 0, marginRight: 0 }]} />
                 </View>
-
-                <Text style={styles.stallProductCount}>
-                    • {item.availableProductCount} products available
-                </Text>
             </TouchableOpacity>
         );
     };
@@ -396,17 +423,24 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#4CAF50" />
+            <StatusBar barStyle="light-content" backgroundColor="#22C55E" />
 
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                    <Text style={styles.backButtonText}>← Back</Text>
+                    <Text style={styles.backButtonText}>←</Text>
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{category} Vendors</Text>
+                <Text style={styles.headerTitle}>{category}</Text>
                 <View style={styles.placeholder} />
             </View>
 
-            <View style={styles.contentContainer}>
+            <View style={styles.greenSection}>
+                <TextInput
+                    style={styles.searchBar}
+                    placeholder={`Search Product or Category`}
+                    placeholderTextColor="#A3A3A3"
+                    value={search}
+                    onChangeText={setSearch}
+                />
                 <Text style={styles.sectionTitle}>List of Stalls</Text>
 
                 {/* Sort Toggle: Alphabetical vs Stall # */}
@@ -421,15 +455,15 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                     </TouchableOpacity>
                 </View>
 
-                {sortedVendors.length === 0 ? (
+                {filteredVendors.length === 0 ? (
                     <View style={styles.centered}>
                         <Text style={styles.noVendorsText}>
-                            No vendors selling {category.toLowerCase()} products found.
+                            No stalls found for "{search}".
                         </Text>
                     </View>
                 ) : (
                     <FlatList
-                        data={sortedVendors}
+                        data={filteredVendors}
                         keyExtractor={(item) => item.id}
                         renderItem={renderVendorCard}
                         contentContainerStyle={styles.listContainer}
@@ -444,7 +478,27 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#22C55E',
+    },
+    greenSection: {
+        flex: 1,
+        backgroundColor: '#22C55E',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingTop: 16,
+        paddingHorizontal: 0,
+    },
+    searchBar: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        fontSize: 16,
+        marginHorizontal: 16,
+        marginBottom: 12,
+        marginTop: 8,
+        color: '#333',
+        elevation: 2,
     },
     header: {
         flexDirection: 'row',
@@ -546,11 +600,37 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         marginBottom: 8,
     },
+    avatarBox: {
+        width: 56,
+        height: 56,
+        borderRadius: 12,
+        backgroundColor: '#E5E7EB',
+        marginRight: 12,
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 12,
+    },
+    avatarPlaceholder: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#E5E7EB',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 12,
+    },
+    avatarInitial: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#9CA3AF',
+    },
     stallTitleSection: {
         flex: 1,
     },
     stallName: {
-        fontSize: 18,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#333333',
         marginBottom: 4,
@@ -560,9 +640,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     stallNumber: {
-        fontSize: 14,
+        fontSize: 18,
         color: '#666666',
-        fontWeight: '500',
+        fontWeight: '600',
     },
     stallLocation: {
         fontSize: 14,
@@ -578,9 +658,9 @@ const styles = StyleSheet.create({
         marginRight: 4,
     },
     operatingHoursText: {
-        fontSize: 12,
+        fontSize: 16,
         color: '#DC2626',
-        fontWeight: '500',
+        fontWeight: '600',
     },
     statusDot: {
         width: 12,
