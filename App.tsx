@@ -15,6 +15,7 @@ import ProductDetailsScreen from './src/components/screens/public/ProductDetails
 import MarketMapScreen from './src/components/screens/public/MarketMapScreen';
 import VendorsByCategoryScreen from './src/components/screens/public/VendorsByCategoryScreen';
 import VendorDetailsScreen from './src/components/screens/public/VendorDetailsScreen';
+import MapScreen from './src/components/screens/public/MapScreen';
 
 import LoginScreen from './src/components/screens/auth/LoginScreen';
 import RegisterScreen from './src/components/screens/auth/RegisterScreen';
@@ -54,6 +55,11 @@ function App(): React.ReactElement {
           <Stack.Screen
             name="VendorDetails"
             component={VendorDetailsScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Map"
+            component={MapScreen}
             options={{ headerShown: false }}
           />
 

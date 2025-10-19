@@ -187,19 +187,10 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             `Stall ${vendor.stall.stall_number}` :
             vendor?.business_name;
 
-        Alert.alert(
-            'Directions',
-            `Navigate to ${stallInfo}?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Get Directions', onPress: () => {
-                        // Here you can integrate with maps or your indoor navigation
-                        Alert.alert('Coming Soon', 'Navigation feature will be implemented soon!');
-                    }
-                },
-            ]
-        );
+        navigation.navigate('Map', {
+            stallNumber: vendor?.stall?.stall_number,
+            vendorName: vendor?.business_name
+        });
     };
 
     const getProductEmoji = (p: VendorProduct): string => {

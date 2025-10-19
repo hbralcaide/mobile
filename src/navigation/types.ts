@@ -8,6 +8,7 @@ export type RootStackParamList = {
   MarketMap: undefined;
   VendorsByCategory: { category: string };
   VendorDetails: { vendorId: string; vendorName: string };
+  Map: { stallNumber?: string; vendorName?: string };
 
   // Auth Routes
   Login: undefined;
