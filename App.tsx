@@ -86,7 +86,14 @@ function App(): React.ReactElement {
               headerTitleAlign: 'center',
             }}
           />
-          <Stack.Screen name="ShopProfile" component={ShopProfileScreen} />
+          <Stack.Screen 
+            name="ShopProfile" 
+            component={ShopProfileScreen}
+            options={{
+              headerTitle: 'Profile',
+              headerTitleAlign: 'center',
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </PaperProvider>

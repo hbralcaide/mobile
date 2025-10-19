@@ -432,16 +432,6 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Header with Back Button */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Profile Picture Section */}
       <View style={styles.profilePictureSection}>
         <View style={styles.profilePictureContainer}>
