@@ -117,15 +117,21 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           stallData = stalls;
         }
 
-        // Combine vendor and stall data
+        // Combine vendor and stall data. Prefer the rows in `stalls` table
+        // but fall back to `vendor_profiles.stall_number` if no stalls row is found.
+        const stallInfo = stallData || (vendorData?.stall_number ? {
+          stall_number: vendorData.stall_number,
+          location_description: vendorData.complete_address || 'Toril Public Market'
+        } : null);
+
         const vendorWithStall = {
           ...vendorData,
-          stall: stallData
+          stall: stallInfo
         };
 
         setVendor(vendorWithStall);
         setFormData({
-          stallNo: stallData?.stall_number || '',
+          stallNo: stallInfo?.stall_number || vendorData?.stall_number || '',
           businessName: vendorData.business_name || '',
           contactNo: vendorData.phone_number || '',
           operatingHours: vendorData?.operating_hours || ''

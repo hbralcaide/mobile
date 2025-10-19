@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
@@ -13,6 +13,23 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const { data, error } = await supabase.from('vendor_profiles').select('*').limit(1);
+        if (error) {
+          console.error('Connection test failed:', error);
+        } else {
+          console.log('Connection test succeeded:', data);
+        }
+      } catch (err) {
+        console.error('Unexpected error during connection test:', err);
+      }
+    };
+
+    testConnection();
+  }, []);
 
   const handleLogin = async () => {
     try {
@@ -55,6 +72,12 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         status: vendorProfile.status,
         application_status: vendorProfile.application_status
       });
+
+      // Check if vendor status is Active
+      if (vendorProfile.status !== 'Active') {
+        Alert.alert('Login Failed', 'Your account is not active. Please contact support for assistance.');
+        return;
+      }
 
       // Check if logging in as main vendor or actual occupant
       const isActualOccupant = vendorProfile.actual_occupant_username === username;
