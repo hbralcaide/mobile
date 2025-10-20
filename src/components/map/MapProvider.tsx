@@ -25,7 +25,15 @@ const MAPDATA_OPTIONS = Object.freeze({
   mapId: MAPPEDIN_CONFIG.mapId,
 });
 
-const MAP_OPTIONS = Object.freeze({});
+// Use 2D camera for better performance
+const MAP_OPTIONS = Object.freeze({
+  camera: {
+    tiltAngle: 0, // Top-down view (2D)
+    rotation: 0,
+  },
+  // Additional performance optimizations
+  enableAtmosphere: false, // Disable 3D atmosphere effects
+});
 
 // Global flag to prevent multiple SDK initializations across hot reloads
 let __sdkInitialized = false;
@@ -84,9 +92,25 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     React.useEffect(() => {
       if (mapData && mapView && !ready) {
         __sdkInitialized = true;
+        
+        // Set 2D camera for better performance
+        try {
+          mapView.camera.set({
+            tiltAngle: 0, // Top-down 2D view
+            rotation: 0,
+          });
+          console.log('[MapProvider] Camera set to 2D mode for better performance');
+        } catch (e) {
+          console.warn('[MapProvider] Could not set 2D camera:', e);
+        }
+        
         setReady(true);
         setError(null);
         if (startTs) console.log(`[MapProvider] Ready in ${(Date.now() - startTs) / 1000}s`);
+      }
+    }, [mapData, mapView]);
+    return null;
+  };
       }
     }, [mapData, mapView]);
     return null;
