@@ -504,14 +504,17 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Contact No.</Text>
-          <TextInput
-            style={[styles.input, !isEditing && styles.inputDisabled]}
-            value={formData.contactNo}
-            onChangeText={(text) => setFormData({ ...formData, contactNo: text })}
-            placeholder="Enter contact number"
-            keyboardType="phone-pad"
-            editable={isEditing}
-          />
+          <View style={styles.contactInputContainer}>
+            <Text style={styles.contactPrefix}>+63</Text>
+            <TextInput
+              style={[styles.input, styles.contactInput, !isEditing && styles.inputDisabled]}
+              value={formData.contactNo}
+              onChangeText={(text) => setFormData({ ...formData, contactNo: text })}
+              placeholder="Enter contact number"
+              keyboardType="phone-pad"
+              editable={isEditing}
+            />
+          </View>
         </View>
 
         {/* Operating Hours Schedule */}
@@ -985,6 +988,31 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: {
     fontSize: 14,
+    color: '#374151',
+  },
+  contactInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#F9FAFB',
+    overflow: 'hidden',
+  },
+  contactPrefix: {
+    fontSize: 16,
+    color: '#374151',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#E5E7EB',
+    borderRightWidth: 1,
+    borderRightColor: '#D1D5DB',
+  },
+  contactInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
     color: '#374151',
   },
 });

@@ -342,7 +342,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.shopName}>{vendor.business_name || 'Shop Name'}</Text>
             <Text style={styles.shopDetail}>Stall No.: {vendor.stall?.stall_number || '—'}</Text>
             <Text style={styles.shopDetail}>Location: Toril Public Market</Text>
-            <Text style={styles.shopDetail}>Contact Number: {vendor.phone_number || '—'}</Text>
+            <Text style={styles.shopDetail}>Contact Number: 0{vendor.phone_number || '—'}</Text>
           </View>
           <TouchableOpacity
             style={styles.profileBtn}
