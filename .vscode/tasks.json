@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Android: rebuild and run",
+			"type": "shell",
+			"command": "adb devices; echo Building Android…; ./gradlew.bat assembleDebug; echo Installing…; adb install -r android/app/build/outputs/apk/debug/app-debug.apk; echo Launching…; npx react-native run-android",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		}
+	]
+}

@@ -1,47 +1,31 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
-import { MapView } from '@mappedin/react-native-sdk';
-import { MAPPEDIN_CONFIG } from '../../../config/mappedin';
+import { useMapOverlay } from '../../map/MapProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const MapScreen: React.FC<Props> = ({ route, navigation }) => {
   const { stallNumber, vendorName } = route.params || {};
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { showMap, hideMap } = useMapOverlay();
 
-  const handleMapReady = () => {
-    console.log('Map loaded successfully!');
-    setLoading(false);
-  };
+  // Show the global map overlay when this screen mounts; hide when leaving
+  useEffect(() => {
+    showMap({ stallNumber, vendorName });
+    return () => hideMap();
+  }, [showMap, hideMap, stallNumber, vendorName]);
 
-  const handleMapError = (err: Error) => {
-    console.error('Map error:', err);
-    setError('Failed to load map. Please try again.');
-    setLoading(false);
-  };
-
-  const mapDataOptions = {
-    key: MAPPEDIN_CONFIG.key,
-    secret: MAPPEDIN_CONFIG.secret,
-    mapId: MAPPEDIN_CONFIG.mapId,
+  const onBack = () => {
+    hideMap();
+    navigation.goBack();
   };
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
@@ -49,37 +33,8 @@ const MapScreen: React.FC<Props> = ({ route, navigation }) => {
         </Text>
       </View>
 
-      {/* Map View */}
-      <View style={styles.mapContainer}>
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.loadingText}>Loading map...</Text>
-          </View>
-        )}
-
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => {
-                setError(null);
-                setLoading(true);
-              }}
-            >
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <MapView
-            style={styles.map}
-            mapData={mapDataOptions}
-            onMapReady={handleMapReady}
-            onError={handleMapError}
-          />
-        )}
-      </View>
+      {/* The global Map overlay is rendered by MapProvider. We keep an empty container for layout symmetry. */}
+      <View style={styles.mapContainer} />
 
       {/* Vendor Info Banner (if navigating to specific stall) */}
       {vendorName && stallNumber && (
@@ -128,41 +83,6 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666666',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#DC2626',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  retryButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
   },
   vendorBanner: {
     backgroundColor: '#4CAF50',

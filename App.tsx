@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PaperProvider } from 'react-native-paper';
 import { RootStackParamList } from './src/navigation/types';
+import { MapProvider } from './src/components/map/MapProvider';
 import { linkingConfig } from './src/navigation/linking';
 import './src/i18n';
 
@@ -30,6 +31,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function App(): React.ReactElement {
   return (
     <PaperProvider>
+      <MapProvider>
       <NavigationContainer linking={linkingConfig}>
         <Stack.Navigator initialRouteName="Home">
           {/* Public Routes */}
@@ -95,6 +97,7 @@ function App(): React.ReactElement {
           <Stack.Screen name="ShopProfile" component={ShopProfileScreen} />
         </Stack.Navigator>
       </NavigationContainer>
+      </MapProvider>
     </PaperProvider>
   );
 }
