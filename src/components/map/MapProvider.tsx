@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert } from 'react-native';
 import { MapView, useMap } from '@mappedin/react-native-sdk';
 import { MAPPEDIN_CONFIG } from '../../config/mappedin';
 
@@ -27,21 +27,17 @@ const MAPDATA_OPTIONS = Object.freeze({
 
 const MAP_OPTIONS = Object.freeze({});
 
-// Global flags to survive hot reloads and prevent duplicate SDK init
-// @ts-ignore
+// Global flag to prevent multiple SDK initializations across hot reloads
+// @ts-ignore - Global variable to survive hot reloads
 if (typeof global.__mappedinInitialized === 'undefined') {
   // @ts-ignore
   global.__mappedinInitialized = false;
 }
-// @ts-ignore
+
+// @ts-ignore - Singleton to track if MapView is currently mounted
 if (typeof global.__mapViewMounted === 'undefined') {
   // @ts-ignore
   global.__mapViewMounted = false;
-}
-// @ts-ignore
-if (typeof global.__mappedinFatal === 'undefined') {
-  // @ts-ignore
-  global.__mappedinFatal = false;
 }
 
 export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -56,18 +52,12 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hasEverShown, setHasEverShown] = useState(global.__mappedinInitialized || false);
   // @ts-ignore - Initialize from global state
   const [canMount, setCanMount] = useState(global.__mappedinInitialized || false);
-  // @ts-ignore - Initialize from global state
-  const [permanentFailure, setPermanentFailure] = useState<boolean>(global.__mappedinFatal || false);
 
   // Prevent mounting if already mounted globally
   React.useEffect(() => {
     return () => {
       // @ts-ignore
       global.__mapViewMounted = false;
-      // @ts-ignore
-      if (!global.__mappedinFatal) {
-        global.__mappedinInitialized = false;
-      }
       console.log('[MapProvider] Component unmounting - releasing global lock');
     };
   }, []);
@@ -77,12 +67,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     setParams(p || null);
     setVisible(true);
-    if (permanentFailure) {
-      console.warn('[MapProvider] Map disabled due to previous fatal error');
-      setError('Map is currently unavailable. Please restart the app later.');
-      return;
-    }
-
+    
     // @ts-ignore - Check global state
     if (!global.__mappedinInitialized && !global.__mapViewMounted) {
       console.log('[MapProvider] First showMap call - will mount MapView');
@@ -98,7 +83,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       console.log('[MapProvider] Map already initialized globally - just showing overlay');
     }
-  }, [permanentFailure]);
+  }, []);
 
   const hideMap = useCallback(() => {
     setVisible(false);
@@ -135,7 +120,7 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <MapOverlayContext.Provider value={value}>
       <View style={styles.container}>{children}</View>
       {/* Only mount MapView when explicitly requested and after delay - keep mounted once initialized */}
-      {hasEverShown && canMount && !permanentFailure && (
+      {hasEverShown && canMount && (
         <View pointerEvents={visible ? 'auto' : 'none'} style={[styles.overlay, !visible && styles.invisible]}> 
           <MapView
             key={`map-${mapKey}`}
@@ -158,19 +143,6 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // This is a bug in the Mappedin SDK where it calls getMapData multiple times internally
                 if (ready && detail && detail.includes('getMapData can only be called once')) {
                   console.log('[MapProvider] Ignoring duplicate getMapData error - map already initialized');
-                  return;
-                }
-
-                if (detail && detail.includes('getMapData can only be called once')) {
-                  console.log('[MapProvider] Fatal map error encountered, disabling map');
-                  // @ts-ignore
-                  global.__mappedinFatal = true;
-                  setPermanentFailure(true);
-                  setCanMount(false);
-                  setReady(false);
-                  // @ts-ignore
-                  global.__mapViewMounted = false;
-                  setError('Map is temporarily unavailable. Please restart the app later.');
                   return;
                 }
                 
@@ -210,14 +182,6 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               </TouchableOpacity>
             </View>
           )}
-        </View>
-      )}
-      {permanentFailure && visible && (
-        <View style={styles.permanentOverlay} pointerEvents="auto">
-          <Text style={styles.permanentTitle}>Map Unavailable</Text>
-          <Text style={styles.permanentText}>
-            We could not initialize the indoor map in this session. Please close the app fully and re-open it later.
-          </Text>
         </View>
       )}
     </MapOverlayContext.Provider>
@@ -281,29 +245,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryText: { color: '#fff', fontWeight: '600' },
-  permanentOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  permanentTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 12,
-  },
-  permanentText: {
-    fontSize: 15,
-    color: '#DDDDDD',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
 });
 
 export default MapProvider;
