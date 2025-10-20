@@ -42,33 +42,33 @@ let __initAttempts = 0;
 
 export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [visible, setVisible] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(__sdkInitialized); // Initialize from global state
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useState<MapOverlayContextType['params']>(null);
   const [startTs, setStartTs] = useState<number | null>(null);
   const [mapKey, setMapKey] = useState(0); // Key to force remount on critical errors
-  const [hasEverShown, setHasEverShown] = useState(false); // Track if map was ever requested
-  const [canMount, setCanMount] = useState(false); // Delay mount to prevent race condition
+  const [hasEverShown, setHasEverShown] = useState(__sdkInitialized); // Track if map was ever requested
+  const [canMount, setCanMount] = useState(__sdkInitialized); // Delay mount to prevent race condition
 
   const showMap = useCallback((p?: { stallNumber?: string; vendorName?: string }) => {
     __initAttempts++;
-      console.log(`[MapProvider] showMap called (attempt ${__initAttempts})`);
+    console.log(`[MapProvider] showMap called (attempt ${__initAttempts}), SDK initialized: ${__sdkInitialized}`);
     
     setParams(p || null);
     setVisible(true);
     
-      // Only mount MapView on first call
-      if (!hasEverShown) {
-        console.log('[MapProvider] First showMap call - will mount MapView');
-        setHasEverShown(true);
-        setError(null);
-        setStartTs(Date.now());
-        // Delay mount slightly to ensure only one instance
-        setTimeout(() => setCanMount(true), 100);
-      } else {
-        console.log('[MapProvider] Map already mounted - just showing overlay');
-      }
-    }, [hasEverShown]);
+    // Only mount MapView if SDK not already initialized
+    if (!__sdkInitialized && !hasEverShown) {
+      console.log('[MapProvider] First showMap call - will mount MapView');
+      setHasEverShown(true);
+      setError(null);
+      setStartTs(Date.now());
+      // Delay mount slightly to ensure only one instance
+      setTimeout(() => setCanMount(true), 100);
+    } else {
+      console.log('[MapProvider] Map already initialized - just showing overlay');
+    }
+  }, [hasEverShown]);
 
   const hideMap = useCallback(() => {
     setVisible(false);
@@ -107,10 +107,6 @@ export const MapProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setReady(true);
         setError(null);
         if (startTs) console.log(`[MapProvider] Ready in ${(Date.now() - startTs) / 1000}s`);
-      }
-    }, [mapData, mapView]);
-    return null;
-  };
       }
     }, [mapData, mapView]);
     return null;
