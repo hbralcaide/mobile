@@ -12,7 +12,7 @@ import MarketScreen from './src/components/screens/public/MarketScreen';
 import CategoryListScreen from './src/components/screens/public/CategoryListScreen';
 import ProductListScreen from './src/components/screens/public/ProductListScreen';
 import ProductDetailsScreen from './src/components/screens/public/ProductDetailsScreen';
-import MarketMapScreen from './src/components/screens/public/MarketMapScreen';
+import MappedinMap from './src/components/screens/public/MappedinMap';
 import VendorsByCategoryScreen from './src/components/screens/public/VendorsByCategoryScreen';
 import VendorDetailsScreen from './src/components/screens/public/VendorDetailsScreen';
 
@@ -45,7 +45,7 @@ function App(): React.ReactElement {
           <Stack.Screen name="CategoryList" component={CategoryListScreen} />
           <Stack.Screen name="ProductList" component={ProductListScreen} />
           <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
-          <Stack.Screen name="MarketMap" component={MarketMapScreen} />
+          <Stack.Screen name="MarketMap" component={MappedinMap} />
           <Stack.Screen
             name="VendorsByCategory"
             component={VendorsByCategoryScreen}

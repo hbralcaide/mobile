@@ -12,7 +12,10 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
-import IndoorMarketMap from './MarketMapScreen';
+import IndoorMarketMap, { StallData } from './MappedinMap';
+import StallPrompt from './StallPrompt';
+import { supabase } from '../../../services/supabase';
+
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
 
@@ -23,9 +26,114 @@ interface CustomerHomeProps extends Props {
 const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => {
   const translateY = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = useState(true);
+  const [selectedStallId, setSelectedStallId] = useState<string | undefined>(undefined);
+  const [selectedStall, setSelectedStall] = useState<StallData | undefined>(undefined);
+  const [stallVendorMap, setStallVendorMap] = useState<Record<string, { vendorId: string; vendorName?: string }>>({});
 
-  const handleStallPress = (stall: any) => {
-    Alert.alert('Stall Selected', `You selected stall: ${stall?.name || 'Unknown'}`);
+  const handleStallPress = (stall: StallData) => {
+    // Only show prompt if a real stall is selected (not a generic map tap)
+    const label = stall?.label || stall?.vendorName || stall?.id || 'Unknown';
+    const isMapTap = !stall?.id || label.toLowerCase() === 'map tap' || stall?.id === 'tap';
+    if (isMapTap) {
+      setSelectedStall(undefined);
+      setSelectedStallId(undefined);
+      return;
+    }
+    setSelectedStall(stall);
+    if (stall?.id) setSelectedStallId(stall.id);
+  };
+
+  const handleGetDirections = (stall: StallData) => {
+    // Wayfinding requires Doors and a walkway network in Maker.
+    Alert.alert(
+      'Directions not available yet',
+      'Wayfinding needs Doors and paths set up in Mappedin Maker. Once those are ready, we can enable routing to this stall.'
+    );
+  };
+
+  const handleViewStall = async (stall: StallData) => {
+    // Fast path: if Maker Location.externalId carries the vendor UUID, navigate directly
+    if (stall.vendorIdFromLocation) {
+      const vendorId = stall.vendorIdFromLocation;
+      const vendorName = stall.vendorName || stall.label || 'Vendor';
+      setSelectedStall(undefined);
+      // @ts-ignore - injected by navigation stack
+      navigation.navigate('VendorDetails', { vendorId, vendorName });
+      return;
+    }
+
+    // Fallback: resolve by stall number using our preloaded Supabase mapping
+    const stallNumber = (stall.stallNumber || stall.label || '').toString();
+    if (!stallNumber || stallNumber.toLowerCase() === 'map tap') {
+      Alert.alert('Select a stall', 'Please tap directly on a stall label (e.g., M-30).');
+      return;
+    }
+    const hit = stallVendorMap[stallNumber];
+    if (hit?.vendorId) {
+      const vendorName = stall.vendorName || hit.vendorName || stall.label || 'Vendor';
+      setSelectedStall(undefined);
+      // @ts-ignore - injected by navigation stack
+      navigation.navigate('VendorDetails', { vendorId: hit.vendorId, vendorName });
+      return;
+    }
+
+    // Helpful message if not linked
+    Alert.alert(
+      'Vendor not linked',
+      `No vendor profile found for stall ${stallNumber}. Please link this stall in your database (stalls.vendor_profile_id or vendor_profiles.stall_number).`
+    );
+  };
+
+  const handleSpacesLoaded = async (
+    spaces: Array<{ id: string; name?: string; externalId?: string; floorName?: string }>
+  ) => {
+    try {
+      const codes = Array.from(
+        new Set(
+          (spaces || [])
+            .map((s) => (s.externalId ? String(s.externalId) : ''))
+            .filter((s) => !!s)
+        )
+      );
+      if (codes.length === 0) return;
+
+      // Query stalls for direct mapping
+      const { data: stallRows, error: stallErr } = await supabase
+        .from('stalls')
+        .select('stall_number, vendor_profile_id')
+        .in('stall_number', codes);
+
+      // Fallback: vendor_profiles where stall_number is stored there
+      const { data: vpRows, error: vpErr } = await supabase
+        .from('vendor_profiles')
+        .select('id, stall_number, business_name')
+        .in('stall_number', codes);
+
+      const map: Record<string, { vendorId: string; vendorName?: string }> = {};
+      if (!stallErr && Array.isArray(stallRows)) {
+        stallRows.forEach((r: any) => {
+          if (r?.stall_number && r?.vendor_profile_id) {
+            map[r.stall_number] = { vendorId: String(r.vendor_profile_id) };
+          }
+        });
+      }
+      if (!vpErr && Array.isArray(vpRows)) {
+        vpRows.forEach((r: any) => {
+          if (r?.stall_number && r?.id) {
+            // Don’t override if stalls already mapped it; otherwise fill from vendor_profiles
+            if (!map[r.stall_number]) {
+              map[r.stall_number] = { vendorId: String(r.id), vendorName: r.business_name || undefined };
+            } else if (!map[r.stall_number].vendorName) {
+              map[r.stall_number].vendorName = r.business_name || undefined;
+            }
+          }
+        });
+      }
+      setStallVendorMap(map);
+    } catch (e) {
+      // Non-fatal: just log, the map UI will still work
+      console.warn('Failed to load stall→vendor mapping', e);
+    }
   };
 
   const toggleBanner = () => {
@@ -62,7 +170,16 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
       <View style={styles.mainContent}>
         <IndoorMarketMap
           onStallPress={handleStallPress}
-          selectedStallId={undefined}
+          selectedStallId={selectedStallId}
+          onSpacesLoaded={handleSpacesLoaded}
+        />
+
+        <StallPrompt
+          visible={!!selectedStall}
+          stall={selectedStall}
+          onClose={() => setSelectedStall(undefined)}
+          onGetDirections={handleGetDirections}
+          onViewStall={handleViewStall}
         />
       </View>
 
