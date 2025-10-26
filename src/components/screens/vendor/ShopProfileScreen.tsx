@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, TextInput, Image, Alert, Platform, PermissionsAndroid, Switch } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, TextInput, Image, Alert, Platform, PermissionsAndroid, Switch, Modal, Animated } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
@@ -7,6 +7,8 @@ import RNFS from 'react-native-fs';
 import { SessionManager } from '../../../utils/sessionManager';
 import { launchImageLibrary, launchCamera, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from '@react-native-community/blur';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
 
@@ -27,13 +29,78 @@ interface VendorProfile {
   };
 }
 
-const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
+const AnimatedModal = ({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible, opacity]); // Added `opacity` as a dependency
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Animated.View style={[styles.modalOverlay, { opacity }]}>
+        <View style={styles.modalContent}>
+          {children}
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.modalCloseButton}
+          >
+            <Text style={styles.modalCloseButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+};
+
+// Added explicit types for SaveModal props
+const SaveModal: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <BlurView style={styles.blurBackground} blurType="light" blurAmount={10}>
+        <View style={styles.modalContainer}>
+          <Ionicons name="checkmark-circle" size={60} color="#22C55E" style={styles.icon} />
+          <Text style={styles.modalTitle}>Saved</Text>
+          <Text style={styles.modalMessage}>Profile updated successfully</Text>
+          <TouchableOpacity style={styles.okButton} onPress={onClose}>
+            <Text style={styles.okButtonText}>OK</Text>
+          </TouchableOpacity>
+        </View>
+      </BlurView>
+    </Modal>
+  );
+};
+
+const ShopProfileScreen: React.FC<Props> = () => {
   const [vendor, setVendor] = useState<VendorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null); // preview
   const [profileUploadUri, setProfileUploadUri] = useState<string | null>(null); // file URI for upload
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
 
   // Get the current session to show logged-in user's info
   const session = SessionManager.getSession();
@@ -81,8 +148,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
       setError(null);
 
       try {
-        // Get the current logged-in vendor from session
-        const session = SessionManager.getSession();
+        // Removed duplicate session declaration
         console.log('ShopProfile session:', session);
         if (!session) {
           console.log('No session found in shop profile');
@@ -171,7 +237,7 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
     };
 
     fetchVendorProfile();
-  }, []);
+  }, [session]); // Updated useEffect to include session dependency
 
   const handleImagePicker = async () => {
     if (!isEditing) return;
@@ -274,127 +340,78 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const saveProfile = async () => {
-  Alert.alert('Debug', 'saveProfile called: starting image upload logic');
-  console.log('DEBUG: saveProfile called, starting image upload logic');
     setLoading(true);
     try {
-      // serialize schedule into formData
+      // Serialize schedule into formData
       const serialized = JSON.stringify(hoursSchedule);
       setFormData((prev) => ({ ...prev, operatingHours: serialized }));
 
       let publicUrl: string | null = null;
-      // Helper: minimal base64 -> ArrayBuffer
-      const b64ToArrayBuffer = (b64: string): ArrayBuffer => {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-        let str = b64.replace(/[^A-Za-z0-9+/=]/g, '');
-        let outputLength = (str.length * 3) / 4;
-        if (str.endsWith('==')) outputLength -= 2;
-        else if (str.endsWith('=')) outputLength -= 1;
-        const bytes = new Uint8Array(outputLength);
-        let p = 0;
-        for (let i = 0; i < str.length; i += 4) {
-          const enc1 = chars.indexOf(str[i]);
-          const enc2 = chars.indexOf(str[i + 1]);
-          const enc3 = chars.indexOf(str[i + 2]);
-          const enc4 = chars.indexOf(str[i + 3]);
-          const chr1 = (enc1 << 2) | (enc2 >> 4);
-          const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-          const chr3 = ((enc3 & 3) << 6) | enc4;
-          bytes[p++] = chr1;
-          if (enc3 !== 64 && p < bytes.length) bytes[p++] = chr2;
-          if (enc4 !== 64 && p < bytes.length) bytes[p++] = chr3;
-        }
-        return bytes.buffer;
-      };
 
-      // Prepare binary data for upload using base64 preferred, else read file path as base64
-      try {
-        let base64Data: string | null = null;
-        let detectedMime: string | null = null;
-        // If preview is data URL, extract base64
-        if (profileImage && profileImage.startsWith('data:')) {
-          const commaIdx = profileImage.indexOf(',');
-          const header = profileImage.substring(5, commaIdx); // e.g. image/png;base64
-          const semi = header.indexOf(';');
-          detectedMime = semi > -1 ? header.substring(0, semi) : header;
-          base64Data = profileImage.slice(commaIdx + 1);
-        }
-        // Else, if we have a file URI, read it as base64
-        if (!base64Data && profileUploadUri) {
-          const filePath = profileUploadUri.replace('file://', '');
-          base64Data = await RNFS.readFile(filePath, 'base64');
-          // best-effort detect by extension
-          const lower = filePath.toLowerCase();
-          if (lower.endsWith('.png')) detectedMime = 'image/png';
-          else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) detectedMime = 'image/jpeg';
-        }
+      // Skip image upload if no new image is provided
+      if (profileUploadUri || (profileImage && profileImage.startsWith('data:'))) {
+        try {
+          let base64Data: string | null = null;
+          let detectedMime: string | null = null;
 
-        if (base64Data) {
-          const arrayBuffer = b64ToArrayBuffer(base64Data);
-          const mime = detectedMime || 'image/jpeg';
-          const ext = mime === 'image/png' ? 'png' : 'jpg';
-          const filename = `avatars/${session?.vendorId || 'unknown'}_${Date.now()}.${ext}`;
-          console.log('🖼️ Attempting upload to Supabase:', filename);
-          const { error: uploadError } = await supabase.storage
-            .from(AVATAR_BUCKET)
-            .upload(filename, arrayBuffer, { upsert: false, contentType: mime });
-          if (uploadError) {
-            console.warn('Upload error (arrayBuffer path):', uploadError.message || uploadError);
-            Alert.alert('Upload Error', uploadError.message || JSON.stringify(uploadError));
-          } else {
-            const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filename);
-            publicUrl = data?.publicUrl || null;
-            console.log('🖼️ Uploaded image publicUrl:', publicUrl);
-            Alert.alert('Upload Success', 'Image uploaded to Supabase!');
+          if (profileImage && profileImage.startsWith('data:')) {
+            const commaIdx = profileImage.indexOf(',');
+            const header = profileImage.substring(5, commaIdx);
+            const semi = header.indexOf(';');
+            detectedMime = semi > -1 ? header.substring(0, semi) : header;
+            base64Data = profileImage.slice(commaIdx + 1);
           }
-        } else {
-          console.log('🖼️ No image data found to upload');
-          Alert.alert('Upload Error', 'No image data found to upload');
+
+          if (!base64Data && profileUploadUri) {
+            const filePath = profileUploadUri.replace('file://', '');
+            base64Data = await RNFS.readFile(filePath, 'base64');
+            const lower = filePath.toLowerCase();
+            if (lower.endsWith('.png')) detectedMime = 'image/png';
+            else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) detectedMime = 'image/jpeg';
+          }
+
+          if (base64Data) {
+            const arrayBuffer = b64ToArrayBuffer(base64Data);
+            const mime = detectedMime || 'image/jpeg';
+            const ext = mime === 'image/png' ? 'png' : 'jpg';
+            const filename = `avatars/${session?.vendorId || 'unknown'}_${Date.now()}.${ext}`;
+            const { error: uploadError } = await supabase.storage
+              .from(AVATAR_BUCKET)
+              .upload(filename, arrayBuffer, { upsert: false, contentType: mime });
+            if (uploadError) {
+              console.warn('Upload error:', uploadError.message || uploadError);
+            } else {
+              const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(filename);
+              publicUrl = data?.publicUrl || null;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed during file read/upload:', e);
         }
-      } catch (e) {
-        console.warn('Failed during file read/upload:', e);
-        Alert.alert('Upload Exception', String(e));
       }
 
-      // prepare update payload
       const payload: any = {
         business_name: formData.businessName,
         phone_number: formData.contactNo,
-        operating_hours: serialized, // Always save the serialized schedule
+        operating_hours: serialized,
       };
-      if (publicUrl) payload.profile_image_url = publicUrl;
-      else console.warn('🖼️ No profile_image_url will be saved (publicUrl is null)');
-
-      if (!session?.vendorId) {
-        throw new Error('No vendor session found');
+      if (session && session.vendorId) {
+        payload.vendor_id = session.vendorId;
       }
 
-      console.log('📝 Updating vendor profile with payload:', payload);
-      console.log('🔑 Session vendorId:', session.vendorId);
-      console.log('👤 Current auth user:', (await supabase.auth.getUser()).data.user?.id);
-      
       const { data: updateData, error: updateError } = await supabase
         .from('vendor_profiles')
         .update(payload)
         .eq('id', session.vendorId)
         .select();
 
-      console.log('Update response:', { updateData, updateError });
-      if (updateData) {
-        console.log('🖼️ Database profile_image_url after update:', updateData[0]?.profile_image_url);
-      }
-
       if (updateError) {
-        console.error('Failed to update vendor profile', updateError);
         Alert.alert('Save failed', 'Could not save profile. Please try again.');
       } else if (!updateData || updateData.length === 0) {
-        console.error('No rows updated - possible RLS issue or wrong vendorId');
         Alert.alert('Save failed', 'No changes were saved. Please check permissions.');
       } else {
-        // update local vendor state
-        setVendor((prev) => prev ? ({ ...prev, business_name: formData.businessName, phone_number: formData.contactNo, /* keep other fields */ }) : prev);
+        setVendor((prev) => prev ? ({ ...prev, business_name: formData.businessName, phone_number: formData.contactNo }) : prev);
         if (publicUrl) setProfileImage(publicUrl);
-        // update session so other screens (like dashboard) can reflect the change immediately
         try {
           const current = SessionManager.getSession();
           if (current) {
@@ -403,21 +420,24 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
         } catch (e) {
           // ignore
         }
-        Alert.alert('Saved', 'Profile updated successfully', [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate back to dashboard to trigger refresh
-              navigation.goBack();
-            }
-          }
-        ]);
+        setSaveModalVisible(true);
+        // Alert.alert('Saved', 'Profile updated successfully');
       }
     } catch (err) {
-      console.error(err);
       Alert.alert('Error', 'An unexpected error occurred while saving.');
     }
     setLoading(false);
+  };
+
+  // Defined b64ToArrayBuffer function
+  const b64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
   };
 
   if (loading) {
@@ -635,6 +655,14 @@ const ShopProfileScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <SaveModal visible={saveModalVisible} onClose={() => setSaveModalVisible(false)} />
+
+      {/* Example Modal Usage
+      <AnimatedModal visible={isModalVisible} onClose={() => setModalVisible(false)}>
+        <Text>Modal Content</Text>
+      </AnimatedModal>
+      */}
     </ScrollView>
   );
 };
@@ -922,6 +950,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 8,
     flexWrap: 'nowrap',
+    opacity: 1,
   },
   dayLabel: {
     width: 80,
@@ -941,6 +970,9 @@ const styles = StyleSheet.create({
     width: 88,
     backgroundColor: '#F9FAFB',
     color: '#374151',
+  },
+  timeInputCentered: {
+    justifyContent: 'center',
   },
   timeSeparator: {
     marginHorizontal: 8,
@@ -1014,6 +1046,79 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     color: '#374151',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalCloseButton: {
+    marginTop: 20,
+    alignSelf: 'center',
+    backgroundColor: '#22C55E',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+  },
+  modalCloseButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  blurBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  modalContainer: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  icon: {
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#22C55E',
+    marginBottom: 10,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  okButton: {
+    backgroundColor: '#22C55E',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  okButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
