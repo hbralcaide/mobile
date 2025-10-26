@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from 'react-native';
+
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../services/supabase';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../../navigation/types';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -44,8 +49,8 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   console.log('Scale:', scale);
 
   // Simple scroll state - no zoom functionality
-  const [scrollX, setScrollX] = useState(0);
-  const [scrollY, setScrollY] = useState(0);
+  const [_scrollX, _setScrollX] = useState(0);
+  const [_scrollY, _setScrollY] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const SCALED_MAP_WIDTH = containerWidth;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -54,11 +59,123 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   // State for UI
   const [selectedStall, setSelectedStall] = useState<string | null>(selectedStallId || null);
 
+  // Cache maps for online status checks: key = stall number like 'V-7' or 'FV-1'
+  const [stallOnlineMap, setStallOnlineMap] = useState<Record<string, boolean>>({});
+  const [stallCheckedMap, setStallCheckedMap] = useState<Record<string, boolean>>({});
+
+  // Helper to parse operating hours JSON and determine if now is within operating hours
+  const isNowOpenFromOperatingHours = (opStr: string | null): boolean => {
+    if (!opStr) return false;
+    try {
+      const schedule = JSON.parse(opStr);
+      const today = new Date();
+      const dayIdx = today.getDay();
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const dayName = days[dayIdx];
+      const daySchedule = schedule[dayName];
+      if (daySchedule && daySchedule.open) {
+        const parseTime = (t: string) => {
+          const ampm = /AM|PM/i.test(t);
+          if (ampm) {
+            const [time, modifier] = t.split(' ');
+            const [hh, mm] = time.split(':').map(Number);
+            let hour = hh % 12;
+            if (/PM/i.test(modifier)) hour += 12;
+            return { hour, minute: mm || 0 };
+          }
+          const [hh, mm] = t.split(':').map(Number);
+          return { hour: hh, minute: mm || 0 };
+        };
+
+        const p1 = parseTime(daySchedule.start);
+        const p2 = parseTime(daySchedule.end);
+
+        const start = new Date(today);
+        start.setHours(p1.hour, p1.minute, 0, 0);
+        const end = new Date(today);
+        end.setHours(p2.hour, p2.minute, 0, 0);
+        const now = today.getTime();
+        return now >= start.getTime() && now <= end.getTime();
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  // Async check for a stall's online status by stall number (e.g., 'V-7')
+  const checkStallOnline = async (stallNumberKey: string) => {
+    if (!stallNumberKey) return false;
+    if (stallCheckedMap[stallNumberKey]) return stallOnlineMap[stallNumberKey] || false;
+
+    setStallCheckedMap(prev => ({ ...prev, [stallNumberKey]: true }));
+    try {
+      const { data: stallRow } = await supabase.from('stalls').select('vendor_profile_id').eq('stall_number', stallNumberKey).maybeSingle();
+      if (!stallRow || !stallRow.vendor_profile_id) {
+        setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: false }));
+        return false;
+      }
+      const vendorId = stallRow.vendor_profile_id;
+      const { data: vp } = await supabase.from('vendor_profiles').select('operating_hours').eq('id', vendorId).maybeSingle();
+      const online = isNowOpenFromOperatingHours((vp as any)?.operating_hours || null);
+      setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: online }));
+      return online;
+    } catch (err) {
+      setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: false }));
+      return false;
+    }
+  };
+
+  // Read optional highlight params from route (allow MarketMap to be navigated-to with highlighting)
+  const route = useRoute<RouteProp<RootStackParamList, 'MarketMap'>>();
+  const highlightCategory = (route?.params as any)?.highlightCategory as string | undefined;
+  const highlightStalls = (route?.params as any)?.highlightStalls as string[] | undefined;
+
+  // Navigation
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+
   // Simple scroll functionality - no zoom, just natural scrolling
 
   // Helper function to handle stall press
+  const handleGiveDirection = (stallData: StallData) => {
+    // Placeholder: show basic direction info. Later this can integrate with map/pan logic or navigation.
+    const message = `Directions to ${stallData.label}:\nX: ${stallData.x}, Y: ${stallData.y}`;
+    Alert.alert('Give Direction', message);
+  };
+
+  const handleViewProducts = (stallData: StallData) => {
+    // Prefer navigating to a vendor/product screen if navigation is available.
+    try {
+      const vendorName = stallData.vendorName || stallData.label;
+      // If we have products but no vendor id, we still navigate and let the target screen handle missing data.
+  navigation?.navigate('VendorDetails', { vendorId: stallData.id, vendorName, vendorProducts: stallData.products });
+    } catch (e) {
+      // Fallback: show simple alert with products
+      if (stallData.products && stallData.products.length > 0) {
+        Alert.alert(`${stallData.label} Products`, stallData.products.join(', '));
+      } else {
+        Alert.alert('No products', 'This stall has no product data available.');
+      }
+    }
+  };
+
   const handleStallPress = (stallData: StallData) => {
+    // mark selected
     setSelectedStall(stallData.id);
+
+    // Show action prompt
+    Alert.alert(
+      stallData.label.replace(/[\s\n]+/g, '-'),
+      'Choose an action',
+      [
+        { text: 'Give direction', onPress: () => handleGiveDirection(stallData) },
+        { text: 'View stall product', onPress: () => handleViewProducts(stallData) },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
+
+    // Call external handler if provided (pass the stall data)
     if (onStallPress) {
       onStallPress(stallData);
     }
@@ -79,8 +196,106 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
       products
     };
 
-    const isSelected = selectedStall === id;
+  const isSelected = selectedStall === id;
 
+  // Normalize label display: convert formats like "M 67", "M\n1", "G1", "FV27" -> "M-67", "M-1", "G-1", "FV-27"
+  const displayLabel = label.replace(/([A-Za-z]+)[\s\n]*([0-9]+)/g, '$1-$2');
+
+    // Determine background color with highlight logic: highlightCategory or highlightStalls override the default
+  // Use a slightly darker grey-white default palette for non-highlighted stalls per UX request
+  // occupied stalls: slightly grey; unoccupied: light grey-white
+  let backgroundColor = isSelected ? '#4CAF50' : (isOccupied ? '#EEEEEE' : '#F5F5F5');
+  if (!isSelected) {
+    // normalize display label and category
+    const displayLabelNorm = displayLabel.toString().toUpperCase();
+    const highlightCat = highlightCategory ? highlightCategory.toString().toLowerCase() : undefined;
+
+  // Helper keyword lists
+    const meatKeywords = ['meat','pork','beef','chicken','baka','manok','baboy','karne','liempo','lomo','pigue','pata','tadyang','brisket','sirloin','tenderloin','ribeye','ribs','short rib','shank','oxtail'];
+    const fishKeywords = ['fish','isda','bangus','tilapia','tuna','galunggong','mackerel','galungong','dilis','tuyo','daing','shrimp','sugpo','seafood','anchovy','mussels','crab','prawn'];
+    const driedKeywords = ['dried','tuyo','daing','danggit','dried fish','df'];
+  const fruitKeywords = ['fruit','fruits','vegetable','vegetables','gulay','prutas','banana','mango','apple','orange','papaya','salad','lettuce','tomato','carrot'];
+
+    const vendorHasKeywords = (keywords: string[]) => {
+      return (vendorName && keywords.some(k => vendorName.toLowerCase().includes(k))) ||
+        (products && Array.isArray(products) && products.some(p => (p || '').toString().toLowerCase() && keywords.some(k => (p || '').toString().toLowerCase().includes(k))));
+    };
+
+    if (highlightCat) {
+      // MEAT
+      if (highlightCat === 'meat') {
+        if ((type && type.toLowerCase() === 'meat') || displayLabelNorm.startsWith('M') || vendorHasKeywords(meatKeywords)) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // FISH
+      else if (highlightCat === 'fish') {
+        const isFprefix = displayLabelNorm.startsWith('F') && !displayLabelNorm.startsWith('FV');
+        if ((type && type.toLowerCase() === 'fish') || (isFprefix && !displayLabelNorm.startsWith('DF')) || vendorHasKeywords(fishKeywords)) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // FRUITS & VEGETABLES (FV) -- include V-1..V-14
+      else if (highlightCat === 'fruits & vegetables' || highlightCat === 'fruits & veg' || highlightCat === 'fv' || highlightCat === 'fruits & vegatables') {
+        const stallNumMatch = displayLabelNorm.match(/[A-Z]+-?(\d+)/);
+        const stallNum = stallNumMatch ? parseInt(stallNumMatch[1], 10) : NaN;
+        const idNumMatch = id.toString().toUpperCase().match(/[A-Z]+-?(\d+)/);
+        const idNum = idNumMatch ? parseInt(idNumMatch[1], 10) : NaN;
+        const isVStallInRange = (
+          (displayLabelNorm.startsWith('V') && !isNaN(stallNum) && stallNum >= 1 && stallNum <= 14) ||
+          (id.toString().toUpperCase().startsWith('V') && !isNaN(idNum) && idNum >= 1 && idNum <= 14)
+        );
+        if (displayLabelNorm.startsWith('FV') || isVStallInRange || vendorHasKeywords(fruitKeywords)) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // RICE & GRAIN (RG)
+      else if (highlightCat.includes('rice') || highlightCat === 'rice & grain' || highlightCat === 'rice/grain' || highlightCat === 'rg' || highlightCat === 'rice_and_grains') {
+        const riceKeywords = ['rice', 'grain', 'bigas', 'palay'];
+        if (displayLabelNorm.startsWith('RG') || id.toString().toUpperCase().startsWith('RG') || vendorHasKeywords(riceKeywords)) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // GROCERY (G)
+      else if (highlightCat === 'grocery' || highlightCat === 'g' || highlightCat.includes('grocery')) {
+        const groceryKeywords = ['grocery', 'sari-sari', 'sari sari', 'store', 'sari-sari store'];
+        if (displayLabelNorm.startsWith('G') || id.toString().toUpperCase().startsWith('G') || vendorHasKeywords(groceryKeywords)) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // DRIED FISH (DF)
+      else if (displayLabelNorm.startsWith('DF') || vendorHasKeywords(driedKeywords)) {
+        backgroundColor = '#FACACA';
+      }
+
+      // EATERY (E)
+      else if (highlightCat === 'eatery' || highlightCat === 'eat') {
+        if (displayLabelNorm.startsWith('E') || id.toString().toUpperCase().startsWith('E')) {
+          backgroundColor = '#FACACA';
+        }
+      }
+
+      // GENERIC FALLBACK
+      else {
+        if ((type && type.toLowerCase() === highlightCat) || vendorHasKeywords([highlightCat])) {
+          backgroundColor = '#FACACA';
+        }
+      }
+    }
+    if (highlightStalls && highlightStalls.includes(id)) {
+      backgroundColor = '#FACACA';
+    }
+  }
+
+    // Determine if this stall is highlighted (via category or explicit stall list)
+    const isHighlighted = backgroundColor === '#FACACA';
+
+    // eslint-disable-next-line react-native/no-inline-styles
     return (
       <TouchableOpacity
         key={id}
@@ -90,25 +305,40 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
           top: y * scale,
           width: width * scale,
           height: height * scale,
-          backgroundColor: isSelected ? '#4CAF50' : (isOccupied ? '#ACACAC' : '#E0E0E0'),
+          backgroundColor: isSelected ? '#4CAF50' : (isOccupied ? backgroundColor : '#F6F6F6'),
           borderWidth: isSelected ? 2 : 1,
-          borderColor: isSelected ? '#2E7D32' : 'black',
+          borderColor: isSelected ? '#2E7D32' : (isHighlighted ? '#e91414ff' : '#D9D9D9'),
           justifyContent: 'center',
           alignItems: 'center',
-          padding: 2.5 * scale,
-          borderRadius: 2,
+          padding: 2 * scale,
+          borderRadius: 4,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.08,
+          shadowRadius: 1,
+          elevation: 1,
         }}
         onPress={() => handleStallPress(stallData)}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
       >
+        {/* small center dot for stall anchor (like mappedin) */}
+        <View style={{
+          width: 6 * scale,
+          height: 6 * scale,
+          borderRadius: 3 * scale,
+          backgroundColor: isSelected ? 'white' : (isHighlighted ? '#b71c1c' : '#8E8E8E'),
+          marginBottom: 4 * scale,
+          opacity: 0.95,
+        }} />
+        {/* eslint-disable-next-line react-native/no-inline-styles */}
         <Text style={{
-          fontSize: 16 * scale,
+          fontSize: 12 * scale,
           textAlign: 'center',
-          color: isSelected ? 'white' : 'black',
-          lineHeight: 18 * scale,
-          fontWeight: 'bold'
+          color: isSelected ? 'white' : (isHighlighted ? '#4a0b0b' : '#222'),
+          lineHeight: 14 * scale,
+          fontWeight: '600'
         }}>
-          {label}
+          {displayLabel}
         </Text>
       </TouchableOpacity>
     );
@@ -118,34 +348,51 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   // No animated styles needed - using natural ScrollView
 
   // Helper function to render areas with exact Figma dimensions
-  const renderArea = (id: string, x: number, y: number, width: number, height: number, label: string) => (
-    <View
-      key={id}
-      style={{
-        position: 'absolute',
-        left: x * scale,
-        top: y * scale,
-        width: width * scale,
-        height: height * scale,
-        backgroundColor: '#ACACAC',
-        borderWidth: 1,
-        borderColor: 'black',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 2.5 * scale,
-      }}
-    >
-      <Text style={{
-        fontSize: 16 * scale,
-        textAlign: 'center',
-        color: 'black',
-        lineHeight: 18 * scale,
-        fontWeight: 'bold'
-      }}>
-        {label}
-      </Text>
-    </View>
-  );
+  const renderArea = (id: string, x: number, y: number, width: number, height: number, label: string) => {
+    // area uses precise absolute positions from Figma; inline styles are required here
+    // pick color based on area type (ceeo, ice-storage, comfort-room, fish-storage should be darker)
+    let bg = '#E0E0E0';
+    let border = '#9E9E9E';
+    let textColor = '#222';
+    const idNorm = id.toLowerCase();
+    if (idNorm.includes('ceeo') || idNorm.includes('ice') || idNorm.includes('comfort') || idNorm.includes('fish-storage') || idNorm.includes('fish')) {
+      bg = '#BDBDBD';
+      border = '#8E8E8E';
+      textColor = '#111';
+    }
+
+    return (
+      // eslint-disable-next-line react-native/no-inline-styles
+      <View
+        key={id}
+        style={{
+          position: 'absolute',
+          left: x * scale,
+          top: y * scale,
+          width: width * scale,
+          height: height * scale,
+          backgroundColor: bg,
+          borderWidth: 1,
+          borderColor: border,
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 2.5 * scale,
+          borderRadius: 3,
+        }}
+      >
+        {/* eslint-disable-next-line react-native/no-inline-styles */}
+        <Text style={{
+          fontSize: 14 * scale,
+          textAlign: 'center',
+          color: textColor,
+          lineHeight: 16 * scale,
+          fontWeight: '700'
+        }}>
+          {label}
+        </Text>
+      </View>
+    );
+  };
 
 
 
@@ -192,26 +439,26 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
             {/* Empty Stalls (no labels) - Removed the small box sticking to F 59 */}
 
             {/* M Stalls (Meat/General) - Left Section - Exact Figma coordinates */}
-            {renderStall('m67', 77.54, 246.59, 51.18, 37.22, 'M 67', 'meat', true, 'Juan\'s Meat Shop', ['Beef', 'Pork', 'Chicken'])}
-            {renderStall('m61', 128.73, 246.59, 51.18, 37.22, 'M 61', 'meat', true, 'Maria\'s Butchery', ['Beef', 'Pork'])}
-            {renderStall('m68', 77.55, 283.82, 51.18, 37.22, 'M 68', 'meat', false)}
-            {renderStall('m62', 128.73, 283.82, 51.18, 37.22, 'M 62', 'meat', true, 'Pedro\'s Fresh Meat', ['Chicken', 'Beef'])}
+            {renderStall('m67', 77.54, 246.59, 51.18, 37.22, 'M-67', 'meat', true, 'Juan\'s Meat Shop', ['Beef', 'Pork', 'Chicken'])}
+            {renderStall('m61', 128.73, 246.59, 51.18, 37.22, 'M-61', 'meat', true, 'Maria\'s Butchery', ['Beef', 'Pork'])}
+            {renderStall('m68', 77.55, 283.82, 51.18, 37.22, 'M-68', 'meat', false)}
+            {renderStall('m62', 128.73, 283.82, 51.18, 37.22, 'M-62', 'meat', true, 'Pedro\'s Fresh Meat', ['Chicken', 'Beef'])}
 
             {/* M Stalls - Right Section - Exact Figma coordinates */}
-            {renderStall('m7', 777.01, 246.59, 51.18, 37.22, 'M 7')}
-            {renderStall('m1', 828.19, 246.59, 51.18, 37.22, 'M\n1')}
-            {renderStall('m8', 777.01, 283.82, 51.18, 37.22, 'M 8')}
-            {renderStall('m2', 828.19, 283.82, 51.18, 37.22, 'M 2')}
+            {renderStall('m7', 777.01, 246.59, 51.18, 37.22, 'M-7')}
+            {renderStall('m1', 828.19, 246.59, 51.18, 37.22, 'M-1')}
+            {renderStall('m8', 777.01, 283.82, 51.18, 37.22, 'M-8')}
+            {renderStall('m2', 828.19, 283.82, 51.18, 37.22, 'M-2')}
 
-            {renderStall('m9', 777.01, 353.61, 51.18, 37.22, 'M 9')}
-            {renderStall('m3', 828.19, 353.61, 51.18, 37.22, 'M 3')}
-            {renderStall('m10', 777.01, 390.83, 51.18, 37.22, 'M 10')}
-            {renderStall('m4', 828.19, 390.83, 51.18, 37.22, 'M 4')}
+            {renderStall('m9', 777.01, 353.61, 51.18, 37.22, 'M-9')}
+            {renderStall('m3', 828.19, 353.61, 51.18, 37.22, 'M-3')}
+            {renderStall('m10', 777.01, 390.83, 51.18, 37.22, 'M-10')}
+            {renderStall('m4', 828.19, 390.83, 51.18, 37.22, 'M-4')}
 
-            {renderStall('m11', 777.01, 460.62, 51.18, 37.22, 'M 11')}
-            {renderStall('m5', 828.19, 460.62, 51.18, 37.22, 'M 5')}
-            {renderStall('m12', 777.01, 497.84, 51.18, 37.22, 'M 12')}
-            {renderStall('m6', 828.19, 497.84, 51.18, 37.22, 'M 6')}
+            {renderStall('m11', 777.01, 460.62, 51.18, 37.22, 'M-11')}
+            {renderStall('m5', 828.19, 460.62, 51.18, 37.22, 'M-5')}
+            {renderStall('m12', 777.01, 497.84, 51.18, 37.22, 'M-12')}
+            {renderStall('m6', 828.19, 497.84, 51.18, 37.22, 'M-6')}
 
             {/* F Stalls (Fish section) - Row 1 - Exact Figma coordinates */}
             {renderStall('f1', 1415.98, 246.59, 51.18, 37.22, 'F\n1', 'fish', true, 'Fresh Catch', ['Tuna', 'Salmon', 'Tilapia'])}
@@ -322,79 +569,79 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
             {renderStall('f71', 1467.16, 494.74, 51.18, 37.22, 'F\n71')}
 
             {/* M Stalls - Center Left Section - Exact Figma coordinates */}
-            {renderStall('m19', 637.42, 246.59, 51.18, 37.22, 'M 19')}
-            {renderStall('m13', 688.6, 246.59, 51.18, 37.22, 'M 13')}
-            {renderStall('m20', 637.42, 283.82, 51.18, 37.22, 'M 20')}
-            {renderStall('m14', 688.6, 283.82, 51.18, 37.22, 'M 14')}
+            {renderStall('m19', 637.42, 246.59, 51.18, 37.22, 'M-19')}
+            {renderStall('m13', 688.6, 246.59, 51.18, 37.22, 'M-13')}
+            {renderStall('m20', 637.42, 283.82, 51.18, 37.22, 'M-20')}
+            {renderStall('m14', 688.6, 283.82, 51.18, 37.22, 'M-14')}
 
-            {renderStall('m21', 637.42, 353.61, 51.18, 37.22, 'M 21')}
-            {renderStall('m15', 688.6, 353.61, 51.18, 37.22, 'M 15')}
-            {renderStall('m22', 637.42, 390.83, 51.18, 37.22, 'M 22')}
-            {renderStall('m16', 688.6, 390.83, 51.18, 37.22, 'M 16')}
+            {renderStall('m21', 637.42, 353.61, 51.18, 37.22, 'M-21')}
+            {renderStall('m15', 688.6, 353.61, 51.18, 37.22, 'M-15')}
+            {renderStall('m22', 637.42, 390.83, 51.18, 37.22, 'M-22')}
+            {renderStall('m16', 688.6, 390.83, 51.18, 37.22, 'M-16')}
 
-            {renderStall('m23', 637.42, 460.62, 51.18, 37.22, 'M 23')}
-            {renderStall('m17', 688.6, 460.62, 51.18, 37.22, 'M 17')}
-            {renderStall('m24', 637.42, 497.84, 51.18, 37.22, 'M 24')}
-            {renderStall('m18', 688.6, 497.84, 51.18, 37.22, 'M 18')}
+            {renderStall('m23', 637.42, 460.62, 51.18, 37.22, 'M-23')}
+            {renderStall('m17', 688.6, 460.62, 51.18, 37.22, 'M-17')}
+            {renderStall('m24', 637.42, 497.84, 51.18, 37.22, 'M-24')}
+            {renderStall('m18', 688.6, 497.84, 51.18, 37.22, 'M-18')}
 
             {/* M Stalls - Center Section - Exact Figma coordinates */}
-            {renderStall('m31', 497.84, 246.59, 51.18, 37.22, 'M 31')}
-            {renderStall('m25', 549.02, 246.59, 51.18, 37.22, 'M 25')}
-            {renderStall('m32', 497.84, 283.82, 51.18, 37.22, 'M 32')}
-            {renderStall('m26', 549.02, 283.82, 51.18, 37.22, 'M 26')}
+            {renderStall('m31', 497.84, 246.59, 51.18, 37.22, 'M-31')}
+            {renderStall('m25', 549.02, 246.59, 51.18, 37.22, 'M-25')}
+            {renderStall('m32', 497.84, 283.82, 51.18, 37.22, 'M-32')}
+            {renderStall('m26', 549.02, 283.82, 51.18, 37.22, 'M-26')}
 
-            {renderStall('m33', 497.84, 353.61, 51.18, 37.22, 'M 33')}
-            {renderStall('m27', 549.02, 353.61, 51.18, 37.22, 'M 27')}
-            {renderStall('m34', 497.84, 390.83, 51.18, 37.22, 'M 34')}
-            {renderStall('m28', 549.02, 390.83, 51.18, 37.22, 'M 28')}
+            {renderStall('m33', 497.84, 353.61, 51.18, 37.22, 'M-33')}
+            {renderStall('m27', 549.02, 353.61, 51.18, 37.22, 'M-27')}
+            {renderStall('m34', 497.84, 390.83, 51.18, 37.22, 'M-34')}
+            {renderStall('m28', 549.02, 390.83, 51.18, 37.22, 'M-28')}
 
-            {renderStall('m35', 497.84, 460.62, 51.18, 37.22, 'M 35')}
-            {renderStall('m29', 549.02, 460.62, 51.18, 37.22, 'M 29')}
-            {renderStall('m36', 497.84, 497.84, 51.18, 37.22, 'M 36')}
-            {renderStall('m30', 549.02, 497.84, 51.18, 37.22, 'M 30')}
+            {renderStall('m35', 497.84, 460.62, 51.18, 37.22, 'M-35')}
+            {renderStall('m29', 549.02, 460.62, 51.18, 37.22, 'M-29')}
+            {renderStall('m36', 497.84, 497.84, 51.18, 37.22, 'M-36')}
+            {renderStall('m30', 549.02, 497.84, 51.18, 37.22, 'M-30')}
 
             {/* M Stalls - Center Right Section - Exact Figma coordinates */}
-            {renderStall('m43', 358.26, 246.59, 51.18, 37.22, 'M 43')}
-            {renderStall('m37', 409.44, 246.59, 51.18, 37.22, 'M 37')}
-            {renderStall('m44', 358.26, 283.82, 51.18, 37.22, 'M 44')}
-            {renderStall('m38', 409.44, 283.82, 51.18, 37.22, 'M 38')}
+            {renderStall('m43', 358.26, 246.59, 51.18, 37.22, 'M-43')}
+            {renderStall('m37', 409.44, 246.59, 51.18, 37.22, 'M-37')}
+            {renderStall('m44', 358.26, 283.82, 51.18, 37.22, 'M-44')}
+            {renderStall('m38', 409.44, 283.82, 51.18, 37.22, 'M-38')}
 
-            {renderStall('m45', 358.26, 353.61, 51.18, 37.22, 'M 45')}
-            {renderStall('m39', 409.44, 353.61, 51.18, 37.22, 'M 39')}
-            {renderStall('m46', 358.26, 390.83, 51.18, 37.22, 'M 46')}
-            {renderStall('m40', 409.44, 390.83, 51.18, 37.22, 'M 40')}
+            {renderStall('m45', 358.26, 353.61, 51.18, 37.22, 'M-45')}
+            {renderStall('m39', 409.44, 353.61, 51.18, 37.22, 'M-39')}
+            {renderStall('m46', 358.26, 390.83, 51.18, 37.22, 'M-46')}
+            {renderStall('m40', 409.44, 390.83, 51.18, 37.22, 'M-40')}
 
-            {renderStall('m47', 358.26, 460.62, 51.18, 37.22, 'M 47')}
-            {renderStall('m41', 409.44, 460.62, 51.18, 37.22, 'M 41')}
-            {renderStall('m48', 358.26, 497.84, 51.18, 37.22, 'M 48')}
-            {renderStall('m42', 409.44, 497.84, 51.18, 37.22, 'M 42')}
+            {renderStall('m47', 358.26, 460.62, 51.18, 37.22, 'M-47')}
+            {renderStall('m41', 409.44, 460.62, 51.18, 37.22, 'M-41')}
+            {renderStall('m48', 358.26, 497.84, 51.18, 37.22, 'M-48')}
+            {renderStall('m42', 409.44, 497.84, 51.18, 37.22, 'M-42')}
 
             {/* M Stalls - Center Left Section - Exact Figma coordinates */}
-            {renderStall('m55', 217.13, 246.59, 51.18, 37.22, 'M 55')}
-            {renderStall('m49', 268.31, 246.59, 51.18, 37.22, 'M 49')}
-            {renderStall('m56', 217.13, 283.82, 51.18, 37.22, 'M 56')}
-            {renderStall('m50', 268.31, 283.82, 51.18, 37.22, 'M 50')}
+            {renderStall('m55', 217.13, 246.59, 51.18, 37.22, 'M-55')}
+            {renderStall('m49', 268.31, 246.59, 51.18, 37.22, 'M-49')}
+            {renderStall('m56', 217.13, 283.82, 51.18, 37.22, 'M-56')}
+            {renderStall('m50', 268.31, 283.82, 51.18, 37.22, 'M-50')}
 
-            {renderStall('m57', 217.13, 353.61, 51.18, 37.22, 'M 57')}
-            {renderStall('m51', 268.31, 353.61, 51.18, 37.22, 'M 51')}
-            {renderStall('m58', 217.13, 390.83, 51.18, 37.22, 'M 58')}
-            {renderStall('m52', 268.31, 390.83, 51.18, 37.22, 'M 52')}
+            {renderStall('m57', 217.13, 353.61, 51.18, 37.22, 'M-57')}
+            {renderStall('m51', 268.31, 353.61, 51.18, 37.22, 'M-51')}
+            {renderStall('m58', 217.13, 390.83, 51.18, 37.22, 'M-58')}
+            {renderStall('m52', 268.31, 390.83, 51.18, 37.22, 'M-52')}
 
-            {renderStall('m59', 217.13, 460.62, 51.18, 37.22, 'M 59')}
-            {renderStall('m53', 268.31, 460.62, 51.18, 37.22, 'M 53')}
-            {renderStall('m60', 217.13, 497.84, 51.18, 37.22, 'M 60')}
-            {renderStall('m54', 268.31, 497.84, 51.18, 37.22, 'M 54')}
+            {renderStall('m59', 217.13, 460.62, 51.18, 37.22, 'M-59')}
+            {renderStall('m53', 268.31, 460.62, 51.18, 37.22, 'M-53')}
+            {renderStall('m60', 217.13, 497.84, 51.18, 37.22, 'M-60')}
+            {renderStall('m54', 268.31, 497.84, 51.18, 37.22, 'M-54')}
 
             {/* M Stalls - Left Section - Exact Figma coordinates */}
-            {renderStall('m69', 77.54, 353.61, 51.18, 37.22, 'M 69')}
-            {renderStall('m63', 128.73, 353.61, 51.18, 37.22, 'M 63')}
-            {renderStall('m70', 77.55, 390.83, 51.18, 37.22, 'M 70')}
-            {renderStall('m64', 128.73, 390.83, 51.18, 37.22, 'M 64')}
+            {renderStall('m69', 77.54, 353.61, 51.18, 37.22, 'M-69')}
+            {renderStall('m63', 128.73, 353.61, 51.18, 37.22, 'M-63')}
+            {renderStall('m70', 77.55, 390.83, 51.18, 37.22, 'M-70')}
+            {renderStall('m64', 128.73, 390.83, 51.18, 37.22, 'M-64')}
 
-            {renderStall('m71', 77.54, 460.62, 51.18, 37.22, 'M 71')}
-            {renderStall('m65', 128.73, 460.62, 51.18, 37.22, 'M 65')}
-            {renderStall('m72', 77.55, 497.84, 51.18, 37.22, 'M 72')}
-            {renderStall('m66', 128.73, 497.84, 51.18, 37.22, 'M 66')}
+            {renderStall('m71', 77.54, 460.62, 51.18, 37.22, 'M-71')}
+            {renderStall('m65', 128.73, 460.62, 51.18, 37.22, 'M-65')}
+            {renderStall('m72', 77.55, 497.84, 51.18, 37.22, 'M-72')}
+            {renderStall('m66', 128.73, 497.84, 51.18, 37.22, 'M-66')}
 
             {/* RG Stalls (Retail General) - Exact Figma coordinates */}
             {renderStall('rg1', 1415.98, 575.39, 51.18, 69.79, 'RG\n1')}
@@ -424,10 +671,10 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
             {renderStall('rg20', 2025.49, 645.18, 51.18, 69.79, 'RG\n20')}
 
             {/* DF Stalls (Dry Food) - Exact Figma coordinates */}
-            {renderStall('df6', 2113.89, 575.39, 51.18, 69.79, 'DF\n6')}
-            {renderStall('df12', 2165.07, 575.39, 51.18, 69.79, 'DF\n12')}
-            {renderStall('df5', 2113.89, 645.18, 51.18, 69.79, 'DF\n5')}
-            {renderStall('df11', 2165.07, 645.18, 51.18, 69.79, 'DF\n11')}
+            {renderStall('df1', 2113.89, 575.39, 51.18, 69.79, 'DF-1')}
+            {renderStall('df2', 2165.07, 575.39, 51.18, 69.79, 'DF-2')}
+            {renderStall('df3', 2113.89, 645.18, 51.18, 69.79, 'DF-3')}
+            {renderStall('df4', 2165.07, 645.18, 51.18, 69.79, 'DF-4')}
 
             {/* E Stalls (Entrance) - Exact Figma coordinates */}
             {renderStall('e11', 694.81, 66.69, 97.71, 58.93, 'E\n11')}
@@ -504,25 +751,25 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
             {renderStall('fv19', 1143.02, 643.63, 51.18, 69.79, 'FV19')}
 
             {/* FV Stalls - Additional Rows - Exact Figma coordinates */}
-            {renderStall('fv27-1', 1091.84, 400.13, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-2', 1143.02, 400.13, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-3', 1091.84, 469.93, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-4', 1143.02, 469.93, 51.18, 69.79, 'FV27')}
+            {renderStall('fv27-1', 1091.84, 400.13, 51.18, 69.79, 'FV-21')}
+            {renderStall('fv27-2', 1143.02, 400.13, 51.18, 69.79, 'FV-22')}
+            {renderStall('fv27-3', 1091.84, 469.93, 51.18, 69.79, 'FV-23')}
+            {renderStall('fv27-4', 1143.02, 469.93, 51.18, 69.79, 'FV-24')}
 
-            {renderStall('fv27-5', 936.75, 237.29, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-6', 987.93, 237.29, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-7', 936.75, 307.08, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-8', 987.93, 307.08, 51.18, 69.79, 'FV27')}
+            {renderStall('fv27-5', 936.75, 237.29, 51.18, 69.79, 'FV-25')}
+            {renderStall('fv27-6', 987.93, 237.29, 51.18, 69.79, 'FV-26')}
+            {renderStall('fv27-7', 936.75, 307.08, 51.18, 69.79, 'FV-27')}
+            {renderStall('fv27-8', 987.93, 307.08, 51.18, 69.79, 'FV-28')}
 
-            {renderStall('fv27-9', 1091.84, 237.29, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-10', 1143.02, 237.29, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-11', 1091.84, 307.08, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-12', 1143.02, 307.08, 51.18, 69.79, 'FV27')}
+            {renderStall('fv27-9', 1091.84, 237.29, 51.18, 69.79, 'FV-29')}
+            {renderStall('fv27-10', 1143.02, 237.29, 51.18, 69.79, 'FV-30')}
+            {renderStall('fv27-11', 1091.84, 307.08, 51.18, 69.79, 'FV-31')}
+            {renderStall('fv27-12', 1143.02, 307.08, 51.18, 69.79, 'FV-32')}
 
-            {renderStall('fv27-13', 936.75, 400.13, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-14', 987.93, 400.13, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-15', 936.75, 469.93, 51.18, 69.79, 'FV27')}
-            {renderStall('fv27-16', 987.93, 469.93, 51.18, 69.79, 'FV27')}
+            {renderStall('fv27-13', 936.75, 400.13, 51.18, 69.79, 'FV-33')}
+            {renderStall('fv27-14', 987.93, 400.13, 51.18, 69.79, 'FV-34')}
+            {renderStall('fv27-15', 936.75, 469.93, 51.18, 69.79, 'FV-35')}
+            {renderStall('fv27-16', 987.93, 469.93, 51.18, 69.79, 'FV-36')}
 
             {/* Special Areas - Exact Figma coordinates */}
             {renderArea('ice-storage', 1547.81, 134.93, 372.22, 68.24, 'ICE STORAGE')}

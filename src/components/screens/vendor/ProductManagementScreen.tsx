@@ -1,6 +1,6 @@
 //Product Management screen
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Swipeable } from 'react-native-gesture-handler';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import { Portal, Dialog, Button } from 'react-native-paper';
@@ -32,7 +32,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
 
   // Helper function to get vendor's market section category
-  const getVendorCategory = () => {
+  const getVendorCategory = useCallback(() => {
     if (currentVendorProfile?.market_sections?.name) {
       return currentVendorProfile.market_sections.name;
     }
@@ -48,7 +48,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     if (businessName.includes('grocery')) return 'Grocery';
     
     return 'General';
-  };
+  }, [currentVendorProfile]);
 
   // Helper function to get filtered product categories based on vendor's market section
   const getFilteredCategories = () => {
@@ -94,7 +94,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   };
 
   // Helper function to get the appropriate category ID for the vendor's market section
-  const getAutoCategoryId = () => {
+  const getAutoCategoryId = useCallback(() => {
     const vendorSection = getVendorCategory().toLowerCase();
     
     if (vendorSection.includes('grocery')) {
@@ -105,16 +105,16 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     }
     
     return null;
-  };
+  }, [categories, getVendorCategory]);
 
   // Helper function to get filtered products based on selected category
-  const getFilteredProducts = () => {
+  const getFilteredProducts = useCallback(() => {
     if (!form.category_id) {
       return [];
     }
 
     return availableProducts.filter(product => product.category_id === form.category_id);
-  };
+  }, [form.category_id, availableProducts]);
 
   // Get current vendor profile
   const getCurrentVendorProfile = async () => {
@@ -243,13 +243,13 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   useEffect(() => {
     const fetchAllProducts = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error: supabaseError } = await supabase
           .from('products')
           .select('*')
           .order('name', { ascending: true });
 
-        if (error) {
-          console.error('Error fetching all products:', error);
+        if (supabaseError) {
+          console.error('Error fetching all products:', supabaseError);
           setAvailableProducts([]);
         } else {
           console.log('Products fetched:', data?.length || 0);
@@ -275,7 +275,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         setShowProductNameDropdown(true);
       }
     }
-  }, [form.category_id, availableProducts, editProduct]);
+  }, [form.category_id, availableProducts, editProduct, getFilteredProducts]);
 
   useEffect(() => {
     if (currentVendorProfile && categories.length > 0 && !form.category_id) {
@@ -284,7 +284,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         setForm(prev => ({ ...prev, category_id: autoCategoryId }));
       }
     }
-  }, [currentVendorProfile, categories, form.category_id]);
+  }, [currentVendorProfile, categories, form.category_id, getAutoCategoryId]);
 
   const openAddModal = () => {
     setEditProduct(null);
@@ -410,7 +410,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         }
       } else {
         // Check if product already exists
-        const { data: existingProduct, error: findError } = await supabase
+        const { data: existingProduct } = await supabase
           .from('products')
           .select('id')
           .eq('name', form.name)
@@ -486,7 +486,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
     setSaving(false);
   };
 
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [_deletingId, setDeletingId] = useState<string | null>(null);
   const handleDelete = (vendorProduct: any) => {
     if (!vendorProduct?.id) {
       console.error('Invalid product data:', vendorProduct);
@@ -519,13 +519,13 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
         return;
       }
 
-      const { error } = await supabase
+      const { error: supabaseError } = await supabase
         .from('vendor_products')
         .delete()
         .match({ id: deleteTarget.id, vendor_id: session.vendorId });
 
-      if (error) {
-        console.error('Delete error:', error);
+      if (supabaseError) {
+        console.error('Delete error:', supabaseError);
         setConfirmDeleteVisible(false);
         Alert.alert('Error', 'Failed to delete product');
       } else {
@@ -735,9 +735,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                       nestedScrollEnabled={true}
                       keyboardShouldPersistTaps="handled"
                     >
-                      {getFilteredProducts().filter(productItem =>
+                      {getFilteredProducts().filter((productItem: any) =>
                         form.name.length === 0 || productItem.name.toLowerCase().includes(form.name.toLowerCase())
-                      ).map((productItem, index) => (
+                      ).map((productItem: any, index: number) => (
                         <TouchableOpacity
                           key={index}
                           style={styles.dropdownItem}

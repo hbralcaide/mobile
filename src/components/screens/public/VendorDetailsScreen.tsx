@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -44,7 +44,7 @@ interface VendorInfo {
 }
 
 const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
-    const { vendorId, vendorName: _vendorName } = route.params;
+    const { vendorId, vendorProducts } = route.params;
     const [vendor, setVendor] = useState<VendorInfo | null>(null);
     const [products, setProducts] = useState<VendorProduct[]>([]);
     const [filteredProducts, setFilteredProducts] = useState<VendorProduct[]>([]);
@@ -53,31 +53,9 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [profileImage, setProfileImage] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchVendorDetails();
+    
 
-        // Supabase Realtime subscription for vendor_products
-        const channel = supabase.channel(`vendor-products-vendor-${vendorId}`);
-        channel
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'vendor_products',
-                    filter: `vendor_id=eq.${vendorId}`,
-                },
-                (payload) => {
-                    // On insert/update/delete, re-fetch products
-                    fetchVendorDetails();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            channel.unsubscribe();
-        };
-    }, [vendorId]);
+    
 
     useEffect(() => {
         // Filter products based on search query
@@ -91,45 +69,98 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         }
     }, [searchQuery, products]);
 
-    const fetchVendorDetails = async () => {
+    const isUuid = (s: string) => {
+        // Basic UUID v4-ish check
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+    };
+
+    const normalizeStallNumber = (raw: string) => {
+        if (!raw) return raw;
+        // Convert formats like 'm45', 'M 45', 'M-45', 'm-45' -> 'M-45'
+        const s = raw.toString().trim();
+        // Uppercase letters, remove surrounding whitespace
+        const upper = s.toUpperCase().replace(/\s+/g, '');
+        // Insert a dash between letters and numbers if missing
+        return upper.replace(/([A-Z]+)(\d+)/, '$1-$2');
+    };
+
+    const fetchVendorDetails = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch vendor profile with stall_number from vendor_profiles table
-            const { data: vendorData, error: vendorError } = await supabase
+            let resolvedVendorId: string | null = null;
+            let vendorData: any = null;
+
+            // If the passed vendorId looks like a real UUID, use it directly
+            if (vendorId && isUuid(vendorId)) {
+                resolvedVendorId = vendorId;
+            } else {
+                // Try to resolve vendor_profile_id from stalls table using normalized stall number
+                const stallNumber = normalizeStallNumber(vendorId || '');
+                if (stallNumber) {
+                    const { data: stallRow, error: stallLookupError } = await supabase
+                        .from('stalls')
+                        .select('vendor_profile_id, stall_number, location_description')
+                        .eq('stall_number', stallNumber)
+                        .maybeSingle();
+
+                    if (stallLookupError) {
+                        console.warn('Error looking up stall by number:', stallLookupError);
+                    }
+
+                    if (stallRow && stallRow.vendor_profile_id) {
+                        resolvedVendorId = stallRow.vendor_profile_id;
+                    }
+                }
+            }
+
+            if (!resolvedVendorId) {
+                // As a last resort, if vendorProducts were passed from navigation and include a vendor_id, use that
+                if (vendorProducts && vendorProducts.length > 0 && vendorProducts[0].vendor_id) {
+                    resolvedVendorId = vendorProducts[0].vendor_id;
+                }
+            }
+
+            if (!resolvedVendorId) {
+                // Could not resolve a vendor_profile id — fail gracefully
+                console.warn('Could not resolve vendor_profile id for:', vendorId);
+                setError('Failed to load vendor details');
+                setLoading(false);
+                return;
+            }
+
+            // Fetch vendor profile now that we have a UUID vendor id
+            const { data: vpData, error: vpError } = await supabase
                 .from('vendor_profiles')
                 .select('id, business_name, phone_number, stall_number, complete_address, profile_image_url')
-                .eq('id', vendorId)
+                .eq('id', resolvedVendorId)
                 .single();
 
-            if (vendorError) {
-                console.error('Error fetching vendor:', vendorError);
+            if (vpError) {
+                console.error('Error fetching vendor:', vpError);
                 setError('Failed to load vendor details');
                 return;
             }
 
-            console.log('Vendor data:', vendorData);
+            vendorData = vpData;
 
-            // Fetch stall information from stalls table
+            // Fetch stall information from stalls table by vendor_profile_id
             const { data: stallData, error: stallError } = await supabase
                 .from('stalls')
                 .select('stall_number, location_description')
-                .eq('vendor_profile_id', vendorId)
+                .eq('vendor_profile_id', resolvedVendorId)
                 .maybeSingle();
 
             if (stallError) {
                 console.warn('Error fetching stall data:', stallError);
             }
 
-            console.log('Stall data:', stallData);
-
-            // Combine vendor and stall data - prefer stalls table, fallback to vendor_profiles
-            const stallInfo = stallData || (vendorData.stall_number ? {
+            const stallInfo = stallData || (vendorData?.stall_number ? {
                 stall_number: vendorData.stall_number,
                 location_description: vendorData.complete_address || 'Toril Public Market'
             } : {
-                stall_number: 'F-1', // Default stall number for demo
+                stall_number: 'F-1',
                 location_description: 'Toril Public Market'
             });
 
@@ -139,15 +170,14 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             };
 
             setVendor(vendorWithStall);
-            
-            // Set profile image if available with cache-busting
-            if (vendorData.profile_image_url) {
+
+            if (vendorData?.profile_image_url) {
                 const cacheBuster = `?v=${Date.now()}`;
                 setProfileImage(vendorData.profile_image_url + cacheBuster);
             }
 
             // Fetch vendor products
-                        const { data: productData, error: productError } = await supabase
+            const { data: productData, error: productError } = await supabase
                 .from('vendor_products')
                 .select(`
           id,
@@ -162,17 +192,24 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                         product_categories ( name )
           )
         `)
-                .eq('vendor_id', vendorId)
-                .in('status', ['available', 'active']); // Only show available products
+                .eq('vendor_id', resolvedVendorId)
+                .in('status', ['available', 'active']);
 
             if (productError) {
                 console.error('Error fetching products:', productError);
-                setError('Failed to load vendor products');
-                return;
+                // Fallback to vendorProducts passed via navigation (when navigating from map with inline data)
+                if (vendorProducts && vendorProducts.length > 0) {
+                    setProducts(vendorProducts as VendorProduct[]);
+                    setFilteredProducts(vendorProducts as VendorProduct[]);
+                } else {
+                    setProducts([]);
+                    setFilteredProducts([]);
+                    setError('Failed to load vendor products');
+                }
+            } else {
+                setProducts((productData as unknown as VendorProduct[]) || []);
+                setFilteredProducts((productData as unknown as VendorProduct[]) || []);
             }
-
-            setProducts((productData as unknown as VendorProduct[]) || []);
-            setFilteredProducts((productData as unknown as VendorProduct[]) || []);
 
         } catch (err) {
             console.error('Unexpected error:', err);
@@ -180,7 +217,33 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [vendorId, vendorProducts]);
+
+    // Supabase Realtime subscription and initial fetch
+    useEffect(() => {
+        fetchVendorDetails();
+
+        const channel = supabase.channel(`vendor-products-vendor-${vendorId}`);
+        channel
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'vendor_products',
+                    filter: `vendor_id=eq.${vendorId}`,
+                },
+                    (_payload) => {
+                        // On insert/update/delete, re-fetch products
+                        fetchVendorDetails();
+                    }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [vendorId, fetchVendorDetails]);
 
     const handleDirections = () => {
         const stallInfo = vendor?.stall?.stall_number ?
@@ -267,7 +330,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                 return { text: `${daySchedule.start} - ${daySchedule.end}`, online };
             }
             return { text: 'Closed today', online: false };
-        } catch (error) {
+        } catch (err) {
             return { text: '6:00 AM - 6:00 PM', online: false };
         }
     };
@@ -300,7 +363,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            <StatusBar barStyle="dark-content" backgroundColor="#aa1515ff" />
 
             {/* Header */}
             <View style={styles.header}>
@@ -390,14 +453,14 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#F5F5F5',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 15,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#F5F5F5',
     },
     backButton: {
         padding: 5,

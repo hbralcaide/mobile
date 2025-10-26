@@ -24,12 +24,12 @@ const ProductDetailsScreen: React.FC<Props> = ({ route }) => {
     const fetchProduct = async () => {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
+      const { data, error: supabaseError } = await supabase
         .from('products')
         .select('*')
         .eq('id', productId)
         .single();
-      if (error) {
+      if (supabaseError) {
         setError('Failed to load product details');
         setProduct(null);
       } else {

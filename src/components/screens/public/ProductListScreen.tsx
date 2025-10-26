@@ -24,12 +24,12 @@ const ProductListScreen: React.FC<Props> = ({ navigation, route }) => {
     const fetchProducts = async () => {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
+      const { data, error: supabaseError } = await supabase
         .from('products')
         .select('*')
         .eq('category_id', categoryId)
         .order('name', { ascending: true });
-      if (error) {
+      if (supabaseError) {
         setError('Failed to load products');
         setProducts([]);
       } else {
