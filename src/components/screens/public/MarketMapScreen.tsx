@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../services/supabase';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NavigationProp } from '@react-navigation/native';
@@ -56,6 +58,73 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
 
   // State for UI
   const [selectedStall, setSelectedStall] = useState<string | null>(selectedStallId || null);
+
+  // Cache maps for online status checks: key = stall number like 'V-7' or 'FV-1'
+  const [stallOnlineMap, setStallOnlineMap] = useState<Record<string, boolean>>({});
+  const [stallCheckedMap, setStallCheckedMap] = useState<Record<string, boolean>>({});
+
+  // Helper to parse operating hours JSON and determine if now is within operating hours
+  const isNowOpenFromOperatingHours = (opStr: string | null): boolean => {
+    if (!opStr) return false;
+    try {
+      const schedule = JSON.parse(opStr);
+      const today = new Date();
+      const dayIdx = today.getDay();
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const dayName = days[dayIdx];
+      const daySchedule = schedule[dayName];
+      if (daySchedule && daySchedule.open) {
+        const parseTime = (t: string) => {
+          const ampm = /AM|PM/i.test(t);
+          if (ampm) {
+            const [time, modifier] = t.split(' ');
+            const [hh, mm] = time.split(':').map(Number);
+            let hour = hh % 12;
+            if (/PM/i.test(modifier)) hour += 12;
+            return { hour, minute: mm || 0 };
+          }
+          const [hh, mm] = t.split(':').map(Number);
+          return { hour: hh, minute: mm || 0 };
+        };
+
+        const p1 = parseTime(daySchedule.start);
+        const p2 = parseTime(daySchedule.end);
+
+        const start = new Date(today);
+        start.setHours(p1.hour, p1.minute, 0, 0);
+        const end = new Date(today);
+        end.setHours(p2.hour, p2.minute, 0, 0);
+        const now = today.getTime();
+        return now >= start.getTime() && now <= end.getTime();
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  // Async check for a stall's online status by stall number (e.g., 'V-7')
+  const checkStallOnline = async (stallNumberKey: string) => {
+    if (!stallNumberKey) return false;
+    if (stallCheckedMap[stallNumberKey]) return stallOnlineMap[stallNumberKey] || false;
+
+    setStallCheckedMap(prev => ({ ...prev, [stallNumberKey]: true }));
+    try {
+      const { data: stallRow } = await supabase.from('stalls').select('vendor_profile_id').eq('stall_number', stallNumberKey).maybeSingle();
+      if (!stallRow || !stallRow.vendor_profile_id) {
+        setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: false }));
+        return false;
+      }
+      const vendorId = stallRow.vendor_profile_id;
+      const { data: vp } = await supabase.from('vendor_profiles').select('operating_hours').eq('id', vendorId).maybeSingle();
+      const online = isNowOpenFromOperatingHours((vp as any)?.operating_hours || null);
+      setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: online }));
+      return online;
+    } catch (err) {
+      setStallOnlineMap(prev => ({ ...prev, [stallNumberKey]: false }));
+      return false;
+    }
+  };
 
   // Read optional highlight params from route (allow MarketMap to be navigated-to with highlighting)
   const route = useRoute<RouteProp<RootStackParamList, 'MarketMap'>>();
@@ -132,8 +201,10 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   // Normalize label display: convert formats like "M 67", "M\n1", "G1", "FV27" -> "M-67", "M-1", "G-1", "FV-27"
   const displayLabel = label.replace(/([A-Za-z]+)[\s\n]*([0-9]+)/g, '$1-$2');
 
-  // Determine background color with highlight logic: highlightCategory or highlightStalls override the default
-  let backgroundColor = isSelected ? '#4CAF50' : (isOccupied ? '#ACACAC' : '#E0E0E0');
+    // Determine background color with highlight logic: highlightCategory or highlightStalls override the default
+  // Use a slightly darker grey-white default palette for non-highlighted stalls per UX request
+  // occupied stalls: slightly grey; unoccupied: light grey-white
+  let backgroundColor = isSelected ? '#4CAF50' : (isOccupied ? '#EEEEEE' : '#F5F5F5');
   if (!isSelected) {
     // normalize display label and category
     const displayLabelNorm = displayLabel.toString().toUpperCase();
@@ -151,40 +222,66 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
     };
 
     if (highlightCat) {
+      // MEAT
       if (highlightCat === 'meat') {
         if ((type && type.toLowerCase() === 'meat') || displayLabelNorm.startsWith('M') || vendorHasKeywords(meatKeywords)) {
           backgroundColor = '#FACACA';
         }
-      } else if (highlightCat === 'fish') {
-        // Strict fish: label starts with F but not FV or DF, or type is fish, or vendor/products mention fish
+      }
+
+      // FISH
+      else if (highlightCat === 'fish') {
         const isFprefix = displayLabelNorm.startsWith('F') && !displayLabelNorm.startsWith('FV');
         if ((type && type.toLowerCase() === 'fish') || (isFprefix && !displayLabelNorm.startsWith('DF')) || vendorHasKeywords(fishKeywords)) {
           backgroundColor = '#FACACA';
         }
-      } else if (highlightCat === 'fruits & vegetables' || highlightCat === 'fruits & veg' || highlightCat === 'fv' || highlightCat === 'fruits & vegatables') {
-        // Fruits & Vegetables: explicit 'FV' stalls or vendor/product keywords for fruits/vegetables
-        if (displayLabelNorm.startsWith('FV') || vendorHasKeywords(fruitKeywords)) {
+      }
+
+      // FRUITS & VEGETABLES (FV) -- include V-1..V-14
+      else if (highlightCat === 'fruits & vegetables' || highlightCat === 'fruits & veg' || highlightCat === 'fv' || highlightCat === 'fruits & vegatables') {
+        const stallNumMatch = displayLabelNorm.match(/[A-Z]+-?(\d+)/);
+        const stallNum = stallNumMatch ? parseInt(stallNumMatch[1], 10) : NaN;
+        const idNumMatch = id.toString().toUpperCase().match(/[A-Z]+-?(\d+)/);
+        const idNum = idNumMatch ? parseInt(idNumMatch[1], 10) : NaN;
+        const isVStallInRange = (
+          (displayLabelNorm.startsWith('V') && !isNaN(stallNum) && stallNum >= 1 && stallNum <= 14) ||
+          (id.toString().toUpperCase().startsWith('V') && !isNaN(idNum) && idNum >= 1 && idNum <= 14)
+        );
+        if (displayLabelNorm.startsWith('FV') || isVStallInRange || vendorHasKeywords(fruitKeywords)) {
           backgroundColor = '#FACACA';
         }
-      } else if (highlightCat.includes('rice') || highlightCat === 'rice & grain' || highlightCat === 'rice/grain' || highlightCat === 'rg' || highlightCat === 'rice_and_grains') {
-        // Rice & Grain (RG): explicit 'RG' stalls or vendor/product keywords for rice/grain
+      }
+
+      // RICE & GRAIN (RG)
+      else if (highlightCat.includes('rice') || highlightCat === 'rice & grain' || highlightCat === 'rice/grain' || highlightCat === 'rg' || highlightCat === 'rice_and_grains') {
         const riceKeywords = ['rice', 'grain', 'bigas', 'palay'];
         if (displayLabelNorm.startsWith('RG') || id.toString().toUpperCase().startsWith('RG') || vendorHasKeywords(riceKeywords)) {
           backgroundColor = '#FACACA';
         }
-      } else if (highlightCat === 'grocery' || highlightCat === 'g' || highlightCat.includes('grocery')) {
-        // Grocery: highlight only G stalls (or vendors/products that hint at grocery)
-        const groceryKeywords = ['grocery', 'sari-sari', 'sari sari', 'store', 'sari-sari store', 'sari-sari store'];
+      }
+
+      // GROCERY (G)
+      else if (highlightCat === 'grocery' || highlightCat === 'g' || highlightCat.includes('grocery')) {
+        const groceryKeywords = ['grocery', 'sari-sari', 'sari sari', 'store', 'sari-sari store'];
         if (displayLabelNorm.startsWith('G') || id.toString().toUpperCase().startsWith('G') || vendorHasKeywords(groceryKeywords)) {
           backgroundColor = '#FACACA';
         }
-      } else if (highlightCat.includes('dried') || highlightCat === 'dried fish' || highlightCat === 'driedfish') {
-        // Dried fish: DF stalls or vendor hints for dried fish
-        if (displayLabelNorm.startsWith('DF') || vendorHasKeywords(driedKeywords)) {
+      }
+
+      // DRIED FISH (DF)
+      else if (displayLabelNorm.startsWith('DF') || vendorHasKeywords(driedKeywords)) {
+        backgroundColor = '#FACACA';
+      }
+
+      // EATERY (E)
+      else if (highlightCat === 'eatery' || highlightCat === 'eat') {
+        if (displayLabelNorm.startsWith('E') || id.toString().toUpperCase().startsWith('E')) {
           backgroundColor = '#FACACA';
         }
-      } else {
-        // Generic fallback: match by explicit stall type or keywords derived from the category name
+      }
+
+      // GENERIC FALLBACK
+      else {
         if ((type && type.toLowerCase() === highlightCat) || vendorHasKeywords([highlightCat])) {
           backgroundColor = '#FACACA';
         }
@@ -194,6 +291,9 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
       backgroundColor = '#FACACA';
     }
   }
+
+    // Determine if this stall is highlighted (via category or explicit stall list)
+    const isHighlighted = backgroundColor === '#FACACA';
 
     // eslint-disable-next-line react-native/no-inline-styles
     return (
@@ -205,24 +305,38 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
           top: y * scale,
           width: width * scale,
           height: height * scale,
-          backgroundColor,
+          backgroundColor: isSelected ? '#4CAF50' : (isOccupied ? backgroundColor : '#F6F6F6'),
           borderWidth: isSelected ? 2 : 1,
-          borderColor: isSelected ? '#2E7D32' : 'black',
+          borderColor: isSelected ? '#2E7D32' : (isHighlighted ? '#e91414ff' : '#D9D9D9'),
           justifyContent: 'center',
           alignItems: 'center',
-          padding: 2.5 * scale,
-          borderRadius: 2,
+          padding: 2 * scale,
+          borderRadius: 4,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.08,
+          shadowRadius: 1,
+          elevation: 1,
         }}
         onPress={() => handleStallPress(stallData)}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
       >
+        {/* small center dot for stall anchor (like mappedin) */}
+        <View style={{
+          width: 6 * scale,
+          height: 6 * scale,
+          borderRadius: 3 * scale,
+          backgroundColor: isSelected ? 'white' : (isHighlighted ? '#b71c1c' : '#8E8E8E'),
+          marginBottom: 4 * scale,
+          opacity: 0.95,
+        }} />
         {/* eslint-disable-next-line react-native/no-inline-styles */}
         <Text style={{
-          fontSize: 16 * scale,
+          fontSize: 12 * scale,
           textAlign: 'center',
-          color: isSelected ? 'white' : 'black',
-          lineHeight: 18 * scale,
-          fontWeight: 'bold'
+          color: isSelected ? 'white' : (isHighlighted ? '#4a0b0b' : '#222'),
+          lineHeight: 14 * scale,
+          fontWeight: '600'
         }}>
           {displayLabel}
         </Text>
@@ -234,37 +348,51 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ onStallPress, selecte
   // No animated styles needed - using natural ScrollView
 
   // Helper function to render areas with exact Figma dimensions
-  const renderArea = (id: string, x: number, y: number, width: number, height: number, label: string) => (
+  const renderArea = (id: string, x: number, y: number, width: number, height: number, label: string) => {
     // area uses precise absolute positions from Figma; inline styles are required here
-    // eslint-disable-next-line react-native/no-inline-styles
-    <View
-      key={id}
-      style={{
-        position: 'absolute',
-        left: x * scale,
-        top: y * scale,
-        width: width * scale,
-        height: height * scale,
-        backgroundColor: '#ACACAC',
-        borderWidth: 1,
-        borderColor: 'black',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 2.5 * scale,
-      }}
-    >
-      {/* eslint-disable-next-line react-native/no-inline-styles */}
-      <Text style={{
-        fontSize: 16 * scale,
-        textAlign: 'center',
-        color: 'black',
-        lineHeight: 18 * scale,
-        fontWeight: 'bold'
-      }}>
-        {label}
-      </Text>
-    </View>
-  );
+    // pick color based on area type (ceeo, ice-storage, comfort-room, fish-storage should be darker)
+    let bg = '#E0E0E0';
+    let border = '#9E9E9E';
+    let textColor = '#222';
+    const idNorm = id.toLowerCase();
+    if (idNorm.includes('ceeo') || idNorm.includes('ice') || idNorm.includes('comfort') || idNorm.includes('fish-storage') || idNorm.includes('fish')) {
+      bg = '#BDBDBD';
+      border = '#8E8E8E';
+      textColor = '#111';
+    }
+
+    return (
+      // eslint-disable-next-line react-native/no-inline-styles
+      <View
+        key={id}
+        style={{
+          position: 'absolute',
+          left: x * scale,
+          top: y * scale,
+          width: width * scale,
+          height: height * scale,
+          backgroundColor: bg,
+          borderWidth: 1,
+          borderColor: border,
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 2.5 * scale,
+          borderRadius: 3,
+        }}
+      >
+        {/* eslint-disable-next-line react-native/no-inline-styles */}
+        <Text style={{
+          fontSize: 14 * scale,
+          textAlign: 'center',
+          color: textColor,
+          lineHeight: 16 * scale,
+          fontWeight: '700'
+        }}>
+          {label}
+        </Text>
+      </View>
+    );
+  };
 
 
 

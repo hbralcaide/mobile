@@ -126,6 +126,10 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
           <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Dried Fish')}>
             <Text style={styles.categoryButtonText}>Dried Fish</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Eatery')}>
+            <Text style={styles.categoryButtonText}>Eatery</Text>
+          </TouchableOpacity>
         </ScrollView>
 
         {/* Search Bar removed as requested */}

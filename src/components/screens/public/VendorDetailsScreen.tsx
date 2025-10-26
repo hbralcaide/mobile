@@ -363,7 +363,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            <StatusBar barStyle="dark-content" backgroundColor="#aa1515ff" />
 
             {/* Header */}
             <View style={styles.header}>
@@ -453,14 +453,14 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#F5F5F5',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 15,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#F5F5F5',
     },
     backButton: {
         padding: 5,
