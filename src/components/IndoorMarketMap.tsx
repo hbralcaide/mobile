@@ -84,6 +84,7 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
         const isSelected = selectedCategory ? stall.category === selectedCategory : true;
 
         return (
+            // eslint-disable-next-line react-native/no-inline-styles
             <TouchableOpacity
                 key={stall.id}
                 style={{
@@ -102,7 +103,8 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
                 }}
                 onPress={() => handleStallPress(stall.id)}
             >
-                <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold', textAlign: 'center' }}>
+                    {/* eslint-disable-next-line react-native/no-inline-styles */}
+                    <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold', textAlign: 'center' }}>
                     {stall.name}
                 </Text>
             </TouchableOpacity>
@@ -110,7 +112,8 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
     };
 
     const renderSpecialArea = (area: SpecialArea) => (
-        <View
+    // eslint-disable-next-line react-native/no-inline-styles
+    <View
             key={area.id}
             style={{
                 position: 'absolute',
@@ -126,6 +129,7 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
                 borderRadius: 4,
             }}
         >
+            {/* eslint-disable-next-line react-native/no-inline-styles */}
             <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold', textAlign: 'center' }}>
                 {area.name}
             </Text>
@@ -133,7 +137,8 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
     );
 
     const renderExit = (exit: Exit) => (
-        <View
+    // eslint-disable-next-line react-native/no-inline-styles
+    <View
             key={exit.id}
             style={{
                 position: 'absolute',
@@ -148,6 +153,7 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
                 borderColor: '#000000',
             }}
         >
+            {/* eslint-disable-next-line react-native/no-inline-styles */}
             <Text style={{ color: 'white', fontSize: 8, fontWeight: 'bold', textAlign: 'center' }}>
                 {exit.name}
             </Text>
@@ -158,9 +164,10 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
         const lines = [];
 
         // Vertical lines
-        for (let i = 1; i < 6; i++) {
+            for (let i = 1; i < 6; i++) {
             const x = (i * svgWidth / 6);
             lines.push(
+                // eslint-disable-next-line react-native/no-inline-styles
                 <View
                     key={`vline-${i}`}
                     style={{
@@ -176,9 +183,10 @@ const IndoorMarketMap: React.FC<IndoorMarketMapProps> = ({ selectedCategory, onS
         }
 
         // Horizontal lines
-        for (let i = 1; i < 4; i++) {
+            for (let i = 1; i < 4; i++) {
             const y = (i * svgHeight / 4);
             lines.push(
+                // eslint-disable-next-line react-native/no-inline-styles
                 <View
                     key={`hline-${i}`}
                     style={{

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -81,9 +81,9 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   // Refresh data when returning to the dashboard
-  const refreshData = async () => {
-    const session = SessionManager.getSession();
-    if (!session?.vendorId) {
+  const refreshData = useCallback(async () => {
+    const localSession = SessionManager.getSession();
+    if (!localSession?.vendorId) {
       console.log('No session for refresh');
       return;
     }
@@ -109,7 +109,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
             )
           )
         `)
-        .eq('vendor_id', session.vendorId)
+  .eq('vendor_id', localSession.vendorId)
         .not('status', 'eq', 'deleted')
         .order('created_at', { ascending: false });
 
@@ -123,12 +123,12 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
     } catch (err) {
       console.error('Error refreshing data:', err);
     }
-  };
+  }, []);
 
   // Set up real-time subscription
   useEffect(() => {
-    const session = SessionManager.getSession();
-    if (!session?.vendorId) return;
+  const localSession = SessionManager.getSession();
+  if (!localSession?.vendorId) return;
 
     // Subscribe to both vendor_products and products tables
     const subscription = supabase
@@ -139,7 +139,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
           event: '*',
           schema: 'public',
           table: 'vendor_products',
-          filter: `vendor_id=eq.${session.vendorId}`
+          filter: `vendor_id=eq.${localSession.vendorId}`
         },
         async (payload) => {
           console.log('Vendor products update:', payload);
@@ -176,18 +176,18 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [refreshData]);
 
   useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = async () => {
       setLoading(true);
       setError(null);
 
       try {
         // Get the current logged-in vendor from session
-        const session = SessionManager.getSession();
-        console.log('Dashboard session:', session);
-        if (!session) {
+        const localSession = SessionManager.getSession();
+        console.log('Dashboard session:', localSession);
+        if (!localSession) {
           console.log('No session found in dashboard');
           setError('Please login to view dashboard');
           setLoading(false);
@@ -195,7 +195,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
         }
 
         // Get the vendor profile using the vendor ID from session (since actual occupant shares same vendor profile)
-        console.log('🔍 Dashboard: Fetching vendor data for ID:', session.vendorId);
+        console.log('🔍 Dashboard: Fetching vendor data for ID:', localSession.vendorId);
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
           .select(`
@@ -205,7 +205,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
               name
             )
           `)
-          .eq('id', session.vendorId)
+            .eq('id', localSession.vendorId)
           .single();
 
         if (vendorError) {
@@ -249,7 +249,7 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
           setProfileImage(vendorWithStall.profile_image_url + cacheBuster);
         } else {
           try {
-            const local = await AsyncStorage.getItem(`vendor_avatar_${session.vendorId}`);
+            const local = await AsyncStorage.getItem(`vendor_avatar_${localSession.vendorId}`);
             if (local) {
               // stored as base64 string (data without mime prefix) -> prefix it
               setProfileImage(`data:image/jpeg;base64,${local}`);

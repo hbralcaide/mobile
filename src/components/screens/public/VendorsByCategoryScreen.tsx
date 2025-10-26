@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { TextInput } from 'react-native';
 import {
     View,
@@ -7,7 +7,6 @@ import {
     FlatList,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     SafeAreaView,
     StatusBar,
     Image,
@@ -43,32 +42,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
     const [error, setError] = useState<string | null>(null);
     const [sortMode, setSortMode] = useState<'alpha' | 'stall'>('alpha'); // toggle between alphabetical and stall number
 
-    useEffect(() => {
-        fetchVendorsByCategory();
-
-        // Supabase Realtime subscription for vendor_products
-        const channel = supabase.channel(`vendor-products-category-${category}`);
-        channel
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'vendor_products',
-                },
-                (payload) => {
-                    // On insert/update/delete, re-fetch vendor list
-                    fetchVendorsByCategory();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            channel.unsubscribe();
-        };
-    }, [category]);
-
-    const fetchVendorsByCategory = async () => {
+    const fetchVendorsByCategory = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -168,7 +142,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                         businessName.includes('chicken') || businessName.includes('manok') || businessName.includes('karne') ||
                         productName.includes('chicken') || productName.includes('manok') || productName.includes('drumstick') || productName.includes('thigh') || productName.includes('wing') || productName.includes('breast')
                     );
-                } else if (selected === 'vegetables & fruits') {
+                } else if (selected === 'fruits & vegetables') {
                     matchesCategory = (
                         businessName.includes('vegetable') || businessName.includes('veggie') || businessName.includes('gulay') ||
                         businessName.includes('fruit') || businessName.includes('prutas') ||
@@ -277,7 +251,34 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [category]);
+
+    useEffect(() => {
+        fetchVendorsByCategory();
+
+        // Supabase Realtime subscription for vendor_products
+        const channel = supabase.channel(`vendor-products-category-${category}`);
+        channel
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'vendor_products',
+                },
+                (_payload) => {
+                    // On insert/update/delete, re-fetch vendor list
+                    fetchVendorsByCategory();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [category, fetchVendorsByCategory]);
+
+
 
     const handleVendorPress = (vendor: VendorInfo) => {
         navigation.navigate('VendorDetails', {
@@ -350,7 +351,7 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                     return { text: `${daySchedule.start} - ${daySchedule.end}`, online };
                 }
                 return { text: 'Closed today', online: false };
-            } catch (error) {
+            } catch (err) {
                 return { text: '6:00 AM - 6:00 PM', online: false };
             }
         };
@@ -429,8 +430,16 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                 <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
                     <Text style={styles.backButtonText}>←</Text>
                 </TouchableOpacity>
+
                 <Text style={styles.headerTitle}>{category}</Text>
-                <View style={styles.placeholder} />
+
+                {/* Show Map button - navigates to MarketMap and highlights the current category (e.g., meat) */}
+                <TouchableOpacity
+                    style={styles.showMapButton}
+                    onPress={() => navigation.navigate('MarketMap', { highlightCategory: (category || '').toString().toLowerCase() })}
+                >
+                    <Text style={styles.showMapButtonText}>Show map</Text>
+                </TouchableOpacity>
             </View>
 
             <View style={styles.greenSection}>
@@ -524,6 +533,20 @@ const styles = StyleSheet.create({
     },
     placeholder: {
         width: 60,
+    },
+    showMapButton: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 12,
+        minWidth: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    showMapButtonText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '600',
     },
     contentContainer: {
         flex: 1,

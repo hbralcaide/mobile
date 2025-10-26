@@ -6,7 +6,6 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  Alert,
   Animated,
   ScrollView,
 } from 'react-native';
@@ -24,8 +23,10 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
   const translateY = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = useState(true);
 
-  const handleStallPress = (stall: any) => {
-    Alert.alert('Stall Selected', `You selected stall: ${stall?.name || 'Unknown'}`);
+  const handleStallPress = (_stall: any) => {
+    // No-op: IndoorMarketMap now shows its own prompt when a stall is tapped.
+    // Keep this handler available for future wiring (e.g., analytics or selection state).
+    // console.log('stall pressed', _stall);
   };
 
   const toggleBanner = () => {
@@ -110,8 +111,8 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
             <Text style={styles.categoryButtonText}>Meat</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Vegetables & Fruits')}>
-            <Text style={styles.categoryButtonText}>Vegetables & Fruits</Text>
+          <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Fruits & Vegetables')}>
+            <Text style={styles.categoryButtonText}>Fruits & Vegetables</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.categoryButton} onPress={() => handleCategoryPress('Rice & Grain')}>

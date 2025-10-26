@@ -5,9 +5,9 @@ export type RootStackParamList = {
   CategoryList: undefined;
   ProductList: { categoryId: string };
   ProductDetails: { productId: string };
-  MarketMap: undefined;
+  MarketMap: { highlightCategory?: string; highlightStalls?: string[] } | undefined;
   VendorsByCategory: { category: string };
-  VendorDetails: { vendorId: string; vendorName: string };
+  VendorDetails: { vendorId: string; vendorName: string; vendorProducts?: any[] };
 
   // Auth Routes
   Login: undefined;
