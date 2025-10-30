@@ -8,10 +8,12 @@ import {
   StatusBar,
   Animated,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
-import IndoorMarketMap from './MarketMapScreen';
+import MapViewComponent from '../../map/MapView';
+import { supabase } from '../../../services/supabase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
 
@@ -19,15 +21,11 @@ interface CustomerHomeProps extends Props {
   onLogout?: () => void;
 }
 
-const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => {
+const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation }) => {
   const translateY = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = useState(true);
-
-  const handleStallPress = (_stall: any) => {
-    // No-op: IndoorMarketMap now shows its own prompt when a stall is tapped.
-    // Keep this handler available for future wiring (e.g., analytics or selection state).
-    // console.log('stall pressed', _stall);
-  };
+  const [selectedLocation, setSelectedLocation] = useState<{id: string; name: string; data?: any} | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const toggleBanner = () => {
     const toValue = isExpanded ? 300 : 0;
@@ -42,29 +40,100 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, onLogout }) => 
   };
 
   const handleCategoryPress = (category: string) => {
-    navigation.navigate('VendorsByCategory', { category });
+    // Toggle category selection for highlighting
+    setSelectedCategory(prev => prev === category ? null : category);
+  };
+
+  const handleStallClick = async (stallNumber: string) => {
+    console.log('Stall clicked:', stallNumber);
+    
+    try {
+      // Query vendor by stall_number
+      const { data: vendor, error } = await supabase
+        .from('vendor_profiles')
+        .select('id, business_name, first_name, last_name')
+        .eq('stall_number', stallNumber)
+        .single();
+
+      if (error) {
+        console.error('Error fetching vendor:', error);
+        Alert.alert('No Vendor', `Stall ${stallNumber} is currently vacant.`);
+        return;
+      }
+
+      if (vendor) {
+        console.log('Vendor found:', vendor);
+        // Navigate to VendorDetails screen
+        navigation.navigate('VendorDetails', {
+          vendorId: vendor.id,
+          vendorName: vendor.business_name || `${vendor.first_name} ${vendor.last_name}`,
+        });
+      }
+    } catch (error) {
+      console.error('Error handling stall click:', error);
+      Alert.alert('Error', 'Failed to load vendor information');
+    }
+  };
+
+  const handleLocationSelect = (locationId: string, locationName: string, locationData?: any) => {
+    console.log('Location selected:', { locationId, locationName, locationData });
+    setSelectedLocation({ id: locationId, name: locationName, data: locationData });
+    
+    // Show location details alert
+    Alert.alert(
+      locationName,
+      'What would you like to do?',
+      [
+        {
+          text: 'View Details',
+          onPress: () => {
+            // TODO: Navigate to location/vendor details
+            console.log('View details for:', locationId);
+          }
+        },
+        {
+          text: 'Get Directions',
+          onPress: () => {
+            // TODO: Show directions to this location
+            console.log('Get directions to:', locationId);
+          }
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => setSelectedLocation(null)
+        }
+      ]
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#2C2C2C" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Toril Public Market</Text>
-        {onLogout && (
-          <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
       {/* Main Content - Indoor Map */}
       <View style={styles.mainContent}>
-        <IndoorMarketMap
-          onStallPress={handleStallPress}
-          selectedStallId={undefined}
+        <MapViewComponent 
+          onLocationSelect={handleLocationSelect}
+          selectedCategory={selectedCategory || undefined}
+          onStallClick={handleStallClick}
         />
+        
+        {/* Selected Location Info Banner */}
+        {selectedLocation && (
+          <View style={styles.locationInfoBanner}>
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationName}>{selectedLocation.name}</Text>
+              <Text style={styles.locationId}>ID: {selectedLocation.id}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setSelectedLocation(null)}
+            >
+              <Text style={styles.closeButtonText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Green Banner Overlay */}
@@ -176,6 +245,54 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
+  },
+  locationInfoBanner: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  locationInfo: {
+    flex: 1,
+  },
+  locationName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  locationId: {
+    fontSize: 12,
+    color: '#666',
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FF5252',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  closeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    lineHeight: 22,
   },
   greenBanner: {
     position: 'absolute',
@@ -314,6 +431,59 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#FFFFFF',
     fontWeight: 'bold',
+  },
+  viewAllButton: {
+    backgroundColor: '#2196F3',
+  },
+  viewAllButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalCloseButton: {
+    fontSize: 28,
+    color: '#666',
+    padding: 5,
+  },
+  stallItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  stallNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  stallName: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
   },
 });
 

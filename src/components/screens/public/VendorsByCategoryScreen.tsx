@@ -432,14 +432,6 @@ const VendorsByCategoryScreen: React.FC<Props> = ({ route, navigation }) => {
                 </TouchableOpacity>
 
                 <Text style={styles.headerTitle}>{category}</Text>
-
-                {/* Show Map button - navigates to MarketMap and highlights the current category (e.g., meat) */}
-                <TouchableOpacity
-                    style={styles.showMapButton}
-                    onPress={() => navigation.navigate('MarketMap', { highlightCategory: (category || '').toString().toLowerCase() })}
-                >
-                    <Text style={styles.showMapButtonText}>Show map</Text>
-                </TouchableOpacity>
             </View>
 
             <View style={styles.greenSection}>
