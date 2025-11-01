@@ -132,15 +132,6 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [showDirectionModal, setShowDirectionModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
 
-  // Success modal states
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successModalData, setSuccessModalData] = useState<{
-    productName: string;
-    price: number;
-    vendorName: string;
-    stallNumber: string;
-  } | null>(null);
-
   // Shopping list context
   const { addItem } = useShoppingList();
 
@@ -886,14 +877,12 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
           categoryId: selectedCategoryId || '',
         });
         
-        // Show success modal with product details
-        setSuccessModalData({
-          productName: vendor.productName,
-          price: vendor.minPrice,
-          vendorName: vendorName,
-          stallNumber: vendor.stall_number,
-        });
-        setShowSuccessModal(true);
+        // Show success confirmation with product details
+        Alert.alert(
+          '✓ Added to My Stops', 
+          `${vendor.productName} - ₱${vendor.minPrice.toFixed(2)}\nFrom ${vendorName} (Stall ${vendor.stall_number})`,
+          [{ text: 'OK' }]
+        );
       } else {
         // Add a placeholder item to shopping list representing this vendor/stall
         addItem({
@@ -908,14 +897,12 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
           categoryId: '',
         });
         
-        // Show success modal for stall visit
-        setSuccessModalData({
-          productName: vendorName,
-          price: 0,
-          vendorName: vendorName,
-          stallNumber: vendor.stall_number,
-        });
-        setShowSuccessModal(true);
+        // Show success confirmation
+        Alert.alert(
+          '✓ Added to My Stops', 
+          `${vendorName} (Stall ${vendor.stall_number}) has been added to your stops list.`,
+          [{ text: 'OK' }]
+        );
       }
     };
 
@@ -1456,80 +1443,10 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                   hideBanner();
                 }}
               >
-                <Text style={styles.directionPrimaryButtonText}>View in Map</Text>
+                <Text style={styles.directionPrimaryButtonText}>Got it!</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal
-        visible={showSuccessModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowSuccessModal(false)}
-      >
-        <TouchableOpacity 
-          style={styles.successModalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSuccessModal(false)}
-        >
-          <View style={styles.successModalContent}>
-            {/* Success Icon */}
-            <View style={styles.successIconContainer}>
-              <View style={styles.successIconCircle}>
-                <Text style={styles.successIconCheck}>✓</Text>
-              </View>
-            </View>
-
-            {/* Success Message */}
-            <Text style={styles.successModalTitle}>Added to My Stops!</Text>
-            
-            {successModalData && (
-              <View style={styles.successModalBody}>
-                {/* Product/Vendor Name */}
-                <View style={styles.successItemRow}>
-                  <Text style={styles.successItemLabel}>
-                    {successModalData.price > 0 ? 'Product' : 'Vendor'}
-                  </Text>
-                  <Text style={styles.successItemValue}>{successModalData.productName}</Text>
-                </View>
-
-                {/* Price (only if > 0) */}
-                {successModalData.price > 0 && (
-                  <View style={styles.successItemRow}>
-                    <Text style={styles.successItemLabel}>Price</Text>
-                    <Text style={styles.successPriceValue}>₱{successModalData.price.toFixed(2)}</Text>
-                  </View>
-                )}
-
-                {/* Vendor Name (only if different from product name) */}
-                {successModalData.price > 0 && (
-                  <View style={styles.successItemRow}>
-                    <Text style={styles.successItemLabel}>From</Text>
-                    <Text style={styles.successItemValue}>{successModalData.vendorName}</Text>
-                  </View>
-                )}
-
-                {/* Stall Number */}
-                <View style={styles.successItemRow}>
-                  <Text style={styles.successItemLabel}>Stall</Text>
-                  <View style={styles.successStallBadge}>
-                    <Text style={styles.successStallText}>{successModalData.stallNumber}</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* Close Button */}
-            <TouchableOpacity
-              style={styles.successModalButton}
-              onPress={() => setShowSuccessModal(false)}
-            >
-              <Text style={styles.successModalButtonText}>Got it!</Text>
-            </TouchableOpacity>
-          </View>
         </TouchableOpacity>
       </Modal>
 
@@ -2510,127 +2427,6 @@ const styles = StyleSheet.create({
   },
   bottomSheetFilterChipTextSelected: {
     color: '#FFFFFF',
-  },
-  // Success Modal Styles
-  successModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  successModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 28,
-    width: '90%',
-    maxWidth: 400,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 20,
-  },
-  successIconContainer: {
-    marginBottom: 20,
-  },
-  successIconCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#4CAF50',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  successIconCheck: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  successModalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#2C2C2C',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  successModalBody: {
-    width: '100%',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  successItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E9ECEF',
-  },
-  successItemLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6C757D',
-  },
-  successItemValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2C2C2C',
-    flex: 1,
-    textAlign: 'right',
-    marginLeft: 12,
-  },
-  successPriceValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-  successStallBadge: {
-    backgroundColor: '#2C2C2C',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  successStallText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  successModalButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#4CAF50',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  successModalButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
   },
 });
 
