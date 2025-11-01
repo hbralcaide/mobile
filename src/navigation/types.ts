@@ -1,7 +1,8 @@
 export type RootStackParamList = {
   // Public Routes
   Home: undefined;
-  Market: { focusStall?: string; stallName?: string } | undefined;
+  ShoppingList: undefined;
+  Market: { focusStall?: string; stallName?: string; shoppingListStalls?: string[] } | undefined;
   CategoryList: undefined;
   ProductList: { categoryId: string };
   ProductDetails: { productId: string };
@@ -23,4 +24,9 @@ export type RootStackParamList = {
   VendorDashboard: undefined;
   ProductManagement: undefined;
   ShopProfile: undefined;
+};
+
+export type MainTabParamList = {
+  Explore: { focusStall?: string; stallName?: string; shoppingListStalls?: string[] } | undefined;
+  MyStops: undefined;
 };

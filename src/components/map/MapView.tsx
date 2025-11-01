@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform, TouchableOpacity, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapView as MappedInMapView, useMap, Marker, Path } from '@mappedin/react-native-sdk';
 import Geolocation from '@react-native-community/geolocation';
@@ -35,14 +35,75 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
   const [gpsStatus, setGpsStatus] = useState<'searching' | 'found' | 'timeout' | null>(null);
   const cleanupTimerRef = useRef<number | null>(null);
   const [categoryVendors, setCategoryVendors] = useState<Array<{ stallNumber: string; vendorName: string; poi_id: string }>>([]);
+  const [userMapCoordinate, setUserMapCoordinate] = useState<any>(null);
+  const hasInitiallyFocusedRef = useRef(false); // Track if we've focused on user location initially
+  const [showEntranceSelector, setShowEntranceSelector] = useState(false);
+  const [_manualPositionMode, setManualPositionMode] = useState(false); // Track if using manual position
 
   // Debug modal state removed - now using navigation instead
 
+  // Market entrance positions (approximate coordinates based on map layout)
+  const MARKET_ENTRANCES = useMemo(() => [
+    { id: 'main', name: 'Main Entrance (North)', lat: 7.018556, lng: 125.495556, description: 'McArthur Highway side' },
+    { id: 'south', name: 'South Entrance', lat: 7.018111, lng: 125.495556, description: 'Parking area side' },
+    { id: 'east', name: 'East Gate', lat: 7.018333, lng: 125.495833, description: 'Near jeepney terminal' },
+    { id: 'west', name: 'West Gate', lat: 7.018333, lng: 125.495278, description: 'Residential side' },
+  ], []);
+
+  // Function to manually set user position at an entrance
+  const setManualPosition = useCallback(async (entrance: typeof MARKET_ENTRANCES[0]) => {
+    if (!mapView || !mapData) return;
+
+    try {
+      const floors = mapData.getByType('floor');
+      if (floors && floors.length > 0) {
+        const currentFloor = floors[0];
+        
+        // Create coordinate from entrance position
+        const coordinate = await mapView.createCoordinate({
+          latitude: entrance.lat,
+          longitude: entrance.lng,
+          floorId: currentFloor.id,
+        });
+        
+        console.log(`📍 Manual position set at: ${entrance.name}`);
+        setUserMapCoordinate(coordinate);
+        setManualPositionMode(true);
+        setShowEntranceSelector(false);
+        
+        // Set the GPS location state as well for compatibility
+        setUserLocation({
+          latitude: entrance.lat,
+          longitude: entrance.lng,
+        });
+        
+        // Focus camera on the manual position
+        if (!highlightedStall) {
+          mapView.Camera.focusOn(coordinate);
+        }
+        
+        Alert.alert(
+          'Position Set',
+          `Your location has been set to ${entrance.name}. The blue dot shows your position, and you can now navigate to any stall.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error setting manual position:', error);
+      Alert.alert('Error', 'Could not set your position. Please try again.');
+    }
+  }, [mapView, mapData, highlightedStall]);
+
+  // Show entrance selector
+  const handleSetMyLocation = useCallback(() => {
+    setShowEntranceSelector(true);
+  }, []);
+
   const startLocationTracking = React.useCallback(() => {
-    // Butuan Mega Market center coordinates
+    // Toril Public Market coordinates (7°1'6"N, 125°29'44"E)
     const MARKET_CENTER = {
-      lat: 8.9474,
-      lng: 125.5406,
+      lat: 7.018333,
+      lng: 125.495556,
     };
     
     const validateLocation = (latitude: number, longitude: number): boolean => {
@@ -52,8 +113,8 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
       const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111;
       const distanceMeters = distanceKm * 1000;
       
-      // Only accept GPS if within 100 meters of market
-      return distanceMeters < 100;
+      // Only accept GPS if within 200 meters of market (increased for outdoor -> indoor transition)
+      return distanceMeters < 200;
     };
     
     // Get current position with timeout
@@ -65,6 +126,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
           });
+          
           // Auto-hide GPS status after 5 seconds
           setGpsStatus('found');
           setTimeout(() => {
@@ -90,6 +152,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
                   latitude: position.coords.latitude,
                   longitude: position.coords.longitude,
                 });
+                
                 setGpsStatus('found');
                 setTimeout(() => {
                   setGpsStatus(null);
@@ -108,13 +171,14 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
           );
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
 
-    // Watch position for continuous updates
+    // Watch position for continuous updates with high accuracy
     const watchId = Geolocation.watchPosition(
       (position) => {
         console.log('📍 Location updated:', position.coords.latitude, position.coords.longitude);
+        console.log('📍 Accuracy:', position.coords.accuracy, 'meters');
         setUserLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -126,7 +190,12 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
       (error) => {
         console.error('Error watching location:', error);
       },
-      { enableHighAccuracy: true, distanceFilter: 5 }
+      { 
+        enableHighAccuracy: true, 
+        distanceFilter: 2, // Update every 2 meters for better accuracy
+        interval: 1000, // Request updates every second
+        fastestInterval: 500 // Allow updates as fast as 500ms
+      }
     );
 
     return () => {
@@ -237,9 +306,9 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     console.log('User denied location permission via modal');
   };
 
-  // Handle space clicks - navigate to vendor details
+  // Handle space clicks - show path and navigate to vendor details
   React.useEffect(() => {
-    if (!mapView) return;
+    if (!mapView || !mapData) return;
 
     const handleClick = async (event: any) => {
       console.log('🖱️ Map clicked!', event);
@@ -258,34 +327,104 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         
         console.log('🏪 Found stall:', clickedStall);
         
-        if (clickedStall && onVendorClick) {
-          console.log('🔍 Fetching vendor for stall:', clickedStall.name);
-          
-          // Fetch vendor ID for this stall
+        if (clickedStall) {
+          // First, show the path from user's location to this stall
           try {
-            const { data, error } = await supabase
-              .from('vendor_profiles')
-              .select('id')
-              .eq('stall_number', clickedStall.name)
-              .single();
+            console.log('🗺️ Drawing path to stall:', clickedStall.name);
+            console.log('🔍 userMapCoordinate available?', userMapCoordinate ? 'YES' : 'NO');
+            console.log('🔍 userLocation available?', userLocation ? 'YES' : 'NO');
             
-            console.log('📦 Vendor data:', data);
-            console.log('❌ Error:', error);
-            
-            if (data && !error) {
-              console.log('✅ Navigating to vendor details:', data.id);
-              onVendorClick(data.id);
+            let startingPoint: any = null;
+
+            // Use the blue dot location (userMapCoordinate) if available
+            if (userMapCoordinate) {
+              console.log('✅ Using blue dot (userMapCoordinate) as starting point');
+              console.log('📍 userMapCoordinate:', JSON.stringify(userMapCoordinate));
+              startingPoint = userMapCoordinate;
             } else {
-              // No vendor found for this stall
-              console.log('⚠️ No vendor found for stall:', clickedStall.name);
-              // Still navigate with stall number to show "no vendor" screen
-              onVendorClick(clickedStall.name);
+              console.log('⚠️ No blue dot available, using door entrance');
+              // Fallback: If no user location, use door entrance
+              const doors = mapData.getByType('door');
+              if (doors.length > 0) {
+                startingPoint = doors[0];
+                console.log('🚪 Using door as starting point:', doors[0].name || doors[0].id);
+              }
+            }
+
+            // Get directions from starting point to clicked stall
+            if (startingPoint) {
+              const directions = await mapView.getDirections(startingPoint, clickedSpace);
+              
+              if (directions && directions.coordinates && directions.coordinates.length > 0) {
+                console.log('✅ Path found with', directions.coordinates.length, 'coordinates');
+                setPathCoordinates(directions.coordinates);
+                setHighlightedStall(clickedStall.name);
+                
+                // Highlight the clicked stall
+                const sectionColors: { [key: string]: string } = {
+                  'E-': '#FF6B6B', 'FV-': '#4CAF50', 'DF-': '#FF9800', 'G-': '#2196F3',
+                  'RG-': '#FFC107', 'V-': '#9C27B0', 'F-': '#00BCD4', 'M-': '#F44336',
+                };
+                
+                // Restore previous highlight
+                if (previousHighlightedSpace) {
+                  const previousStallLabel = stallLabels.find(label => label.poi_id === previousHighlightedSpace.id);
+                  const previousColor = previousStallLabel?.prefix ? sectionColors[previousStallLabel.prefix] : undefined;
+                  
+                  mapView.updateState(previousHighlightedSpace, {
+                    color: previousColor,
+                    hoverColor: previousColor,
+                  });
+                }
+                
+                // Highlight current stall
+                mapView.updateState(clickedSpace, {
+                  color: '#667eea',
+                  hoverColor: '#764ba2',
+                });
+                
+                setPreviousHighlightedSpace(clickedSpace);
+                
+                // Zoom to show full path
+                const floors = mapData.getByType('floor');
+                if (floors.length > 0) {
+                  mapView.Camera.focusOn(floors[0]);
+                }
+              } else {
+                console.log('⚠️ No path found');
+              }
             }
           } catch (err) {
-            console.error('💥 Error fetching vendor:', err);
+            console.error('💥 Error drawing path:', err);
+          }
+          
+          // Then navigate to vendor details if callback provided
+          if (onVendorClick) {
+            console.log('🔍 Fetching vendor for stall:', clickedStall.name);
+            
+            try {
+              const { data, error } = await supabase
+                .from('vendor_profiles')
+                .select('id')
+                .eq('stall_number', clickedStall.name)
+                .single();
+              
+              console.log('📦 Vendor data:', data);
+              console.log('❌ Error:', error);
+              
+              if (data && !error) {
+                console.log('✅ Navigating to vendor details:', data.id);
+                onVendorClick(data.id);
+              } else {
+                console.log('⚠️ No vendor found for stall:', clickedStall.name);
+                onVendorClick(clickedStall.name);
+              }
+            } catch (err) {
+              console.error('💥 Error fetching vendor:', err);
+            }
           }
         } else {
-          console.log('⚠️ Stall not found in stallLabels or no callback');
+          console.log('⚠️ Stall not found in stallLabels');
         }
       } else {
         console.log('⚠️ No spaces in click event');
@@ -297,7 +436,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     return () => {
       mapView.off('click', handleClick);
     };
-  }, [mapView, stallLabels, onVendorClick]);
+  }, [mapView, mapData, stallLabels, onVendorClick, userMapCoordinate, userLocation, previousHighlightedSpace]);
 
   // Log when category changes
   React.useEffect(() => {
@@ -537,6 +676,46 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     fetchAndPositionStalls();
   }, [mapData, mapView, focusStall]);
 
+  // Convert user GPS location to map coordinate for blue dot display
+  React.useEffect(() => {
+    const convertUserLocationToMapCoordinate = async () => {
+      if (!mapView || !mapData || !userLocation) {
+        setUserMapCoordinate(null);
+        return;
+      }
+
+      try {
+        const floors = mapData.getByType('floor');
+        if (floors && floors.length > 0) {
+          const currentFloor = floors[0];
+          
+          // Create a Coordinate object from user's GPS location
+          const coordinate = await mapView.createCoordinate({
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            floorId: currentFloor.id,
+          });
+          
+          setUserMapCoordinate(coordinate);
+          console.log('📍 User location converted to map coordinate');
+          
+          // Focus camera on user's location ONLY on first GPS lock
+          // Only do this if no stall is currently highlighted
+          if (!highlightedStall && !hasInitiallyFocusedRef.current) {
+            console.log('📷 Focusing camera on user location (initial focus)');
+            hasInitiallyFocusedRef.current = true;
+            mapView.Camera.focusOn(coordinate);
+          }
+        }
+      } catch (error) {
+        console.log('Error converting GPS to map coordinate:', error);
+        setUserMapCoordinate(null);
+      }
+    };
+
+    convertUserLocationToMapCoordinate();
+  }, [mapView, mapData, userLocation, highlightedStall]);
+
   // Focus on a specific stall when focusStall prop changes
   React.useEffect(() => {
     if (!mapData || !mapView || !focusStall || stallLabels.length === 0) {
@@ -709,64 +888,12 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
           try {
             let startingPoint: any = null;
 
-            // If we have user's GPS location, check if it's within the market bounds
-            if (userLocation && mapData) {
-              console.log('📍 User GPS location available:', userLocation);
-              
-              // Butuan Mega Market approximate center point
-              // TODO: Replace with your actual market GPS coordinates
-              const MARKET_CENTER = {
-                lat: 8.9474,  // Replace with actual market latitude
-                lng: 125.5406, // Replace with actual market longitude
-              };
-              
-              // Calculate distance from market center (simple approximation)
-              const latDiff = userLocation.latitude - MARKET_CENTER.lat;
-              const lngDiff = userLocation.longitude - MARKET_CENTER.lng;
-              const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Rough km conversion
-              const distanceMeters = distanceKm * 1000;
-              
-              // Expanded range: Use GPS if within 500 meters for outdoor-to-indoor navigation
-              const isNearMarket = distanceMeters < 500;
-              const isWithinMarket = distanceMeters < 100;
-              
-              console.log('📍 Distance from market:', distanceMeters.toFixed(0), 'meters');
-              console.log('📍 GPS near market:', isNearMarket);
-              console.log('📍 GPS within market bounds:', isWithinMarket);
-              console.log('   User lat:', userLocation.latitude, 'lng:', userLocation.longitude);
-              
-              if (isNearMarket) {
-                // User is near or inside the market - use GPS location for navigation
-                const floors = mapData.getByType('floor');
-                const currentFloor = floors[0]; // Ground floor
-                
-                if (currentFloor) {
-                  console.log('🏢 Using floor:', currentFloor.name || currentFloor.id);
-                  
-                  // Create a Coordinate object from user's GPS location
-                  // This supports both outdoor (when far) and indoor (when close) navigation
-                  const userCoordinate = await mapView.createCoordinate({
-                    latitude: userLocation.latitude,
-                    longitude: userLocation.longitude,
-                    floorId: currentFloor.id,
-                  });
-                  
-                  if (isWithinMarket) {
-                    console.log('✅ Created coordinate from GPS (inside market):', userCoordinate);
-                  } else {
-                    console.log('✅ Created coordinate from GPS (outdoor, near market):', userCoordinate);
-                  }
-                  console.log('🎯 Will navigate from GPS location to:', targetSpace.name);
-                  startingPoint = userCoordinate;
-                }
-              } else {
-                console.log('⚠️ GPS location is outside navigation range (>500m) - will use door entrance');
-                console.log('   (User is too far from the market for GPS navigation)');
-              }
+            // Use the blue dot location (userMapCoordinate) if available
+            if (userMapCoordinate) {
+              console.log('✅ Using blue dot (userMapCoordinate) for focusStall navigation');
+              startingPoint = userMapCoordinate;
             } else {
-              console.log('⚠️ No user location available');
-              if (!userLocation) console.log('  - userLocation is null');
-              if (!mapData) console.log('  - mapData is null');
+              console.log('⚠️ No blue dot available for focusStall, using door entrance');
             }
             
             // Fallback: If no user location, use a door as entrance
@@ -842,15 +969,15 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     } else {
       console.log('Stall not found in labels:', focusStall);
     }
-  }, [mapData, mapView, focusStall, stallLabels, userLocation, previousHighlightedSpace]);
+  }, [mapData, mapView, focusStall, stallLabels, userMapCoordinate, previousHighlightedSpace]);
 
-  // Automatically recalculate path when GPS location is found
+  // Automatically recalculate path when GPS location changes (blue dot moves)
   React.useEffect(() => {
-    if (!userLocation || !highlightedStall || !mapData || !mapView || stallLabels.length === 0) {
+    if (!userMapCoordinate || !highlightedStall || !mapData || !mapView || stallLabels.length === 0) {
       return;
     }
 
-    console.log('🔄 GPS location found! Recalculating path to:', highlightedStall);
+    console.log('🔄 GPS location updated! Recalculating path to:', highlightedStall);
     
     // Find the highlighted stall
     const targetStall = stallLabels.find(label => label.name === highlightedStall);
@@ -868,77 +995,33 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
       return;
     }
 
-    // Recalculate path from GPS location
+    // Recalculate path from current GPS location (blue dot)
     const recalculatePath = async () => {
       try {
-        console.log('📍 Checking GPS location:', userLocation.latitude, userLocation.longitude);
+        console.log('� Recalculating path from blue dot to:', highlightedStall);
         
-        // Butuan Mega Market approximate center point
-        const MARKET_CENTER = {
-          lat: 8.9474,  // Replace with actual market latitude
-          lng: 125.5406, // Replace with actual market longitude
-        };
+        // Get directions from blue dot location to target stall
+        const directions = await mapView.getDirections(userMapCoordinate, targetSpace);
         
-        // Calculate distance from market center
-        const latDiff = userLocation.latitude - MARKET_CENTER.lat;
-        const lngDiff = userLocation.longitude - MARKET_CENTER.lng;
-        const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111;
-        const distanceMeters = distanceKm * 1000;
-        
-        // Only use GPS if within 100 meters of market
-        const isWithinMarket = distanceMeters < 100;
-        
-        console.log('📍 Distance from market:', distanceMeters.toFixed(0), 'meters');
-        console.log('📍 GPS within market bounds:', isWithinMarket);
-        
-        if (!isWithinMarket) {
-          console.log('⚠️ GPS location is outside market - not recalculating path');
-          console.log('   Path will continue using door entrance');
-          return;
-        }
-        
-        console.log('🔄 Recalculating from GPS location (inside market)');
-        
-        // Get the current floor
-        const floors = mapData.getByType('floor');
-        const currentFloor = floors[0];
-        
-        if (currentFloor) {
-          console.log('🏢 Using floor:', currentFloor.id);
+        if (directions && directions.coordinates && directions.coordinates.length > 0) {
+          console.log('✅ Path updated!', directions.coordinates.length, 'coordinates');
+          console.log('📏 Distance remaining:', directions.distance?.toFixed(1), 'meters');
+          setPathCoordinates(directions.coordinates);
+        } else {
+          console.log('⚠️ No path found from current location');
           
-          // Create coordinate from GPS location using mapView.Coordinate
-          const userCoordinate = await mapView.createCoordinate({
-            latitude: userLocation.latitude,
-            longitude: userLocation.longitude,
-            floorId: currentFloor.id,
-          });
-          
-          console.log('✅ GPS coordinate created for pathfinding');
-          
-          // Get directions from GPS location to target stall
-          console.log('🎯 Getting directions to:', highlightedStall);
-          const directions = await mapView.getDirections(userCoordinate, targetSpace);
-          
-          if (directions && directions.coordinates && directions.coordinates.length > 0) {
-            console.log('✅ Path recalculated from GPS!', directions.coordinates.length, 'coordinates');
-            console.log('📏 Distance:', directions.distance, 'meters');
-            setPathCoordinates(directions.coordinates);
-          } else {
-            console.log('⚠️ No path found from GPS location - falling back to door entrance');
-            
-            // Fall back to door entrance
-            const doors = mapData.getByType('object').filter((obj: any) => 
-              obj.name && obj.name.toLowerCase().includes('door')
-            );
+          // Fall back to door entrance
+          const doors = mapData.getByType('object').filter((obj: any) => 
+            obj.name && obj.name.toLowerCase().includes('door')
+          );
 
-            if (doors.length > 0) {
-              console.log('🚪 Using door entrance as fallback');
-              const doorDirections = await mapView.getDirections(doors[0], targetSpace);
-              
-              if (doorDirections && doorDirections.coordinates) {
-                console.log('✅ Path created from door entrance');
-                setPathCoordinates(doorDirections.coordinates);
-              }
+          if (doors.length > 0) {
+            console.log('🚪 Using door entrance as fallback');
+            const doorDirections = await mapView.getDirections(doors[0], targetSpace);
+            
+            if (doorDirections && doorDirections.coordinates) {
+              console.log('✅ Path created from door entrance');
+              setPathCoordinates(doorDirections.coordinates);
             }
           }
         }
@@ -966,7 +1049,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     };
 
     recalculatePath();
-  }, [userLocation, highlightedStall, mapData, mapView, stallLabels]);
+  }, [userMapCoordinate, highlightedStall, mapData, mapView, stallLabels]);
 
   if (!mapData) return null;
 
@@ -980,6 +1063,46 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         onDeny={handleDenyPermission}
       />
 
+      {/* Entrance Selector Modal */}
+      {showEntranceSelector && (
+        <View style={styles.entranceSelectorOverlay}>
+          <View style={styles.entranceSelectorModal}>
+            <Text style={styles.entranceSelectorTitle}>Set Your Location</Text>
+            <Text style={styles.entranceSelectorSubtitle}>
+              Select which entrance you're at:
+            </Text>
+            
+            {MARKET_ENTRANCES.map((entrance) => (
+              <TouchableOpacity
+                key={entrance.id}
+                style={styles.entranceButton}
+                onPress={() => setManualPosition(entrance)}
+              >
+                <Text style={styles.entranceButtonTitle}>{entrance.name}</Text>
+                <Text style={styles.entranceButtonDesc}>{entrance.description}</Text>
+              </TouchableOpacity>
+            ))}
+            
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowEntranceSelector(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Set My Location Button - floating action button */}
+      {!userMapCoordinate && !highlightedStall && (
+        <TouchableOpacity
+          style={styles.setLocationButton}
+          onPress={handleSetMyLocation}
+        >
+          <Text style={styles.setLocationButtonText}>📍 Set My Location</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Render pathfinding line with gradient effect */}
       {pathCoordinates && pathCoordinates.length > 0 && (
         <Path
@@ -987,7 +1110,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
           coordinate={pathCoordinates}
           options={{
             color: '#667eea', // Purple-blue to match focused stall
-            width: 3,
+            width: 1.5,
             pulseIterations: 3,
             displayArrowsOnPath: true,
             animateArrowsOnPath: true,
@@ -997,6 +1120,48 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
           }}
           onDrawComplete={() => {
             console.log('Path drawing complete');
+          }}
+        />
+      )}
+
+      {/* User Location Blue Dot - displayed as a Marker on the map */}
+      {userMapCoordinate && (
+        <Marker
+          key="user-location-marker"
+          target={userMapCoordinate}
+          html={`
+            <div style="position: relative; width: 24px; height: 24px;">
+              <div style="
+                position: absolute;
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+                background-color: rgba(33, 150, 243, 0.3);
+                top: 0;
+                left: 0;
+                animation: pulse 2s ease-in-out infinite;
+              "></div>
+              <div style="
+                position: absolute;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background-color: #2196F3;
+                top: 4px;
+                left: 4px;
+                border: 3px solid #FFFFFF;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+              "></div>
+              <style>
+                @keyframes pulse {
+                  0%, 100% { transform: scale(1); opacity: 0.6; }
+                  50% { transform: scale(1.3); opacity: 0.3; }
+                }
+              </style>
+            </div>
+          `}
+          options={{
+            rank: 'always-visible',
           }}
         />
       )}
@@ -1287,6 +1452,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.9,
   },
+  entranceIndicator: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: 'rgba(76, 175, 80, 0.95)',
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  entranceTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  entranceDescription: {
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  entranceDistance: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    marginTop: 2,
+  },
   modalCloseButton: {
     fontSize: 28,
     color: '#666',
@@ -1348,6 +1543,92 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 20,
+  },
+  setLocationButton: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    zIndex: 999,
+  },
+  setLocationButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  entranceSelectorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000,
+  },
+  entranceSelectorModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  entranceSelectorTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  entranceSelectorSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  entranceButton: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#2196F3',
+  },
+  entranceButtonTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1976D2',
+    marginBottom: 4,
+  },
+  entranceButtonDesc: {
+    fontSize: 13,
+    color: '#666',
+  },
+  cancelButton: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '600',
   },
 });
 

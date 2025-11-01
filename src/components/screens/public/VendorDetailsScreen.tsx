@@ -12,6 +12,8 @@ import {
     TextInput,
     Image,
     ScrollView,
+    Platform,
+    Linking,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -55,7 +57,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [profileImage, setProfileImage] = useState<string | null>(null);
-    const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
+    const [_currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
 
     
 
@@ -297,18 +299,60 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             return;
         }
 
+        // Toril Public Market, Toril, Davao City coordinates (7°1'6"N 125°29'44"E)
+        const marketLat = 7.018333;
+        const marketLng = 125.495556;
+        const marketName = 'Toril Public Market, Toril, Davao City';
+        const marketAddress = 'Toril Public Market, McArthur Highway, Toril, Davao City, Davao del Sur';
+
         Alert.alert(
             'Get Directions',
-            `Navigate to Stall ${stallNumber}?`,
+            `Choose navigation type for ${businessName}`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                    text: 'Show on Map', 
+                    text: 'Indoor Map', 
                     onPress: () => {
-                        // Navigate back to Market screen with the stall info
-                        navigation.navigate('Market', {
-                            focusStall: stallNumber,
-                            stallName: businessName
+                        // Navigate to indoor map showing the stall location
+                        Alert.alert(
+                            'Indoor Map',
+                            `The map will show you the location of Stall ${stallNumber}. Look for the highlighted stall in purple when you arrive at the market.`,
+                            [
+                                {
+                                    text: 'Show Map',
+                                    onPress: () => {
+                                        // Close the vendor details screen first, then navigate
+                                        navigation.goBack();
+                                        // Use setTimeout to ensure the screen is closed before navigating
+                                        setTimeout(() => {
+                                            navigation.navigate('Market', {
+                                                focusStall: stallNumber,
+                                                stallName: businessName
+                                            });
+                                        }, 100);
+                                    }
+                                },
+                                { text: 'Cancel', style: 'cancel' }
+                            ]
+                        );
+                    }
+                },
+                {
+                    text: 'Outdoor Directions',
+                    onPress: () => {
+                        // Open external maps app with directions to the market
+                        const url = Platform.select({
+                            ios: `maps:?daddr=${marketLat},${marketLng}&q=${encodeURIComponent(marketName)}`,
+                            android: `google.navigation:q=${marketLat},${marketLng}&mode=d`,
+                            default: `https://www.google.com/maps/dir/?api=1&destination=${marketLat},${marketLng}&destination_place_id=${encodeURIComponent(marketName)}`
+                        });
+
+                        Linking.openURL(url).catch(() => {
+                            // Fallback to Google Maps web URL with address search if native app fails
+                            const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(marketAddress)}`;
+                            Linking.openURL(webUrl).catch(() => {
+                                Alert.alert('Error', 'Unable to open maps application');
+                            });
                         });
                     }
                 },

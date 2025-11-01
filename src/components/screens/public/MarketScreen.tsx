@@ -14,12 +14,13 @@ import {
   ActivityIndicator,
   TextInput,
   Image,
-  Keyboard,
+  PanResponder,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import MapViewComponent from '../../map/MapView';
 import { supabase } from '../../../services/supabase';
+import { useShoppingList } from '../../../context/ShoppingListContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
 
@@ -110,9 +111,10 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState<{id: string; name: string; data?: any} | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [productCategories, setProductCategories] = useState<any[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedCategoryColor, setSelectedCategoryColor] = useState<string>('#FFFFFF');
+  const [mainCategories, setMainCategories] = useState<any[]>([]);
+  const [loadingMainCategories, setLoadingMainCategories] = useState(false);
   const [stallsInCategory, setStallsInCategory] = useState<any[]>([]);
   const [loadingStalls, setLoadingStalls] = useState(false);
   const [showStallList, setShowStallList] = useState(false);
@@ -129,6 +131,77 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   // Direction modal states
   const [showDirectionModal, setShowDirectionModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
+
+  // Success modal states
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successModalData, setSuccessModalData] = useState<{
+    productName: string;
+    price: number;
+    vendorName: string;
+    stallNumber: string;
+  } | null>(null);
+
+  // Shopping list context
+  const { addItem } = useShoppingList();
+
+  // Debug modal state changes
+  useEffect(() => {
+    console.log('Direction modal state changed:', showDirectionModal);
+    console.log('Selected vendor:', selectedVendor?.business_name || 'None');
+  }, [showDirectionModal, selectedVendor]);
+
+  // PanRespononder for draggable bottom sheet - only on drag handle
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to significant vertical gestures to avoid conflicts
+        return Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gestureState) => {
+        // Only allow dragging down (positive dy) when expanded
+        // or dragging up (negative dy) when collapsed
+        if (isExpanded && gestureState.dy > 0) {
+          translateY.setValue(gestureState.dy);
+        } else if (!isExpanded && gestureState.dy < 0) {
+          translateY.setValue(400 + gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // If dragged more than 100px, toggle the sheet state
+        if (gestureState.dy > 100 && isExpanded) {
+          // Collapse the sheet
+          Animated.spring(translateY, {
+            toValue: 400,
+            useNativeDriver: true,
+            tension: 100,
+            friction: 8,
+          }).start(() => {
+            setIsExpanded(false);
+          });
+        } else if (gestureState.dy < -100 && !isExpanded) {
+          // Expand the sheet
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 100,
+            friction: 8,
+          }).start(() => {
+            setIsExpanded(true);
+          });
+        } else {
+          // Snap back to current state
+          Animated.spring(translateY, {
+            toValue: isExpanded ? 0 : 400,
+            useNativeDriver: true,
+            tension: 100,
+            friction: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Handle focusing on a specific stall when navigating from VendorDetails
   useEffect(() => {
@@ -178,82 +251,132 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
     }
   }, [isExpanded, translateY]);
 
-  // Keyboard listener to collapse bottom sheet when typing
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-      // Collapse the bottom sheet when keyboard appears
-      if (isExpanded) {
-        hideBanner();
-      }
-    });
+  // Removed keyboard listener - keep bottom sheet visible when typing
 
-    return () => {
-      keyboardDidShowListener.remove();
-    };
-  }, [isExpanded, hideBanner]);
-
-  const handleCategoryPress = (category: string) => {
+  const handleCategoryPress = (categoryId: string, categoryName: string, marketSectionName?: string) => {
     // Toggle category selection for highlighting
-    const newCategory = selectedCategory === category ? null : category;
+    const newCategory = selectedCategory === categoryName ? null : categoryName;
     setSelectedCategory(newCategory);
-    setSelectedSubcategory(null);
+    setSelectedCategoryId(newCategory ? categoryId : null);
+    
+    // Clear search when selecting a category
+    setSearchQuery('');
+    setSearchResults([]);
+    
+    // Set the color based on market section
+    if (newCategory && marketSectionName) {
+      const color = getSectionColor(marketSectionName);
+      setSelectedCategoryColor(color);
+    } else {
+      setSelectedCategoryColor('#FFFFFF');
+    }
     
     // Collapse bottom sheet when category is selected to show map
     if (newCategory && isExpanded) {
       hideBanner();
     }
     
-    // Don't fetch vendors - just show on map
-    // Fetch vendors when category is selected
+    // Fetch vendors for this product category
     if (!newCategory) {
       setStallsInCategory([]);
-      setProductCategories([]);
-    }
-    // If a new category was selected, fetch product subcategories for that market section
-    if (newCategory) {
-      fetchProductCategories(newCategory);
+    } else {
+      fetchVendorsByProductCategory(categoryId, categoryName);
     }
   };
 
-  // Fetch product_categories for the selected market section (e.g., Meat -> Pork, Beef)
-  const fetchProductCategories = async (sectionName: string) => {
-    setLoadingCategories(true);
+  // Fetch vendors who sell products in a specific product category
+  const fetchVendorsByProductCategory = async (categoryId: string, categoryName: string) => {
+    setLoadingStalls(true);
+    
+    console.log('Fetching vendors for category:', categoryName, 'ID:', categoryId);
+    
     try {
-      // Try to resolve market_section id by name (case-insensitive)
-      const { data: msData, error: msError } = await supabase
-        .from('market_sections')
-        .select('id')
-        .ilike('name', sectionName)
-        .limit(1)
-        .maybeSingle();
+      // Get vendors who have products in this category
+      const { data: vpData, error: vpError } = await supabase
+        .from('vendor_products')
+        .select(`
+          vendor_id,
+          vendor_profiles!inner(
+            id,
+            business_name,
+            first_name,
+            last_name,
+            stall_number,
+            phone_number,
+            category,
+            operating_hours,
+            profile_image_url
+          ),
+          products!inner(
+            id,
+            category_id
+          )
+        `)
+        .eq('products.category_id', categoryId);
 
-      if (msError) throw msError;
+      if (vpError) throw vpError;
 
-      const msId = msData?.id;
+      console.log('Vendor products data:', vpData);
+      console.log('Number of results:', vpData?.length || 0);
 
-      // If we have a market_section id, fetch product_categories by that id
-      let cats: any[] = [];
-      if (msId) {
-        const { data: pcData, error: pcError } = await supabase
-          .from('product_categories')
-          .select('id, name, description')
-          .eq('market_section_id', msId)
-          .order('name');
+      // Deduplicate vendors
+      const vendorMap = new Map();
+      (vpData || []).forEach((item: any) => {
+        const vendor = item.vendor_profiles;
+        if (vendor && !vendorMap.has(vendor.id)) {
+          vendorMap.set(vendor.id, vendor);
+          console.log('Adding vendor:', vendor.business_name, 'Stall:', vendor.stall_number);
+        }
+      });
 
-        if (pcError) throw pcError;
-        cats = pcData || [];
-      }
+      const vendors = Array.from(vendorMap.values()).sort((a: any, b: any) => 
+        (a.stall_number || '').localeCompare(b.stall_number || '')
+      );
 
-      setProductCategories(cats);
+      console.log('Final vendor list:', vendors.length, 'vendors');
+      setStallsInCategory(vendors);
     } catch (err) {
-      console.warn('Failed to fetch product categories for', sectionName, err);
-      setProductCategories([]);
+      console.error('Failed to fetch vendors for category:', categoryName, err);
+      setStallsInCategory([]);
     } finally {
-      setLoadingCategories(false);
+      setLoadingStalls(false);
     }
   };
 
-  const fetchStallsByCategory = async (category: string) => {
+  // Fetch all main categories from product_categories
+  const fetchMainCategories = async () => {
+    setLoadingMainCategories(true);
+    try {
+      const { data, error } = await supabase
+        .from('product_categories')
+        .select(`
+          id, 
+          name, 
+          description, 
+          market_section_id,
+          market_sections (
+            id,
+            name
+          )
+        `)
+        .order('name');
+
+      if (error) throw error;
+      setMainCategories(data || []);
+    } catch (err) {
+      console.error('Failed to fetch main categories:', err);
+      setMainCategories([]);
+    } finally {
+      setLoadingMainCategories(false);
+    }
+  };
+
+  // Fetch main categories on component mount
+  useEffect(() => {
+    fetchMainCategories();
+  }, []);
+
+  const fetchStallsByCategory = async (category: string, subcategoryName?: string | null) => {
     setLoadingStalls(true);
     
     try {
@@ -276,7 +399,67 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         return;
       }
 
-      // Fetch vendors by stall prefix who have products
+      // If a subcategory is selected, we need to filter vendors who sell products in that subcategory
+      if (subcategoryName && subcategoryName.toLowerCase() !== 'all') {
+        // Find the product_category id for the selected subcategory
+        const { data: pcData, error: pcError } = await supabase
+          .from('product_categories')
+          .select('id')
+          .ilike('name', subcategoryName)
+          .limit(1)
+          .maybeSingle();
+
+        if (pcError) throw pcError;
+        
+        const subcategoryId = pcData?.id;
+
+        if (subcategoryId) {
+          // Get vendors who have products in this subcategory and match the stall prefix
+          const { data: vpData, error: vpError } = await supabase
+            .from('vendor_products')
+            .select(`
+              vendor_id,
+              vendor_profiles!inner(
+                id,
+                business_name,
+                first_name,
+                last_name,
+                stall_number,
+                phone_number,
+                category,
+                operating_hours,
+                profile_image_url
+              ),
+              products!inner(
+                id,
+                category_id
+              )
+            `)
+            .eq('products.category_id', subcategoryId)
+            .ilike('vendor_profiles.stall_number', prefix);
+
+          if (vpError) throw vpError;
+
+          // Deduplicate vendors (same vendor may have multiple products in the subcategory)
+          const vendorMap = new Map();
+          (vpData || []).forEach((item: any) => {
+            const vendor = item.vendor_profiles;
+            if (vendor && !vendorMap.has(vendor.id)) {
+              vendorMap.set(vendor.id, vendor);
+            }
+          });
+
+          const vendors = Array.from(vendorMap.values()).sort((a: any, b: any) => 
+            (a.stall_number || '').localeCompare(b.stall_number || '')
+          );
+
+          setStallsInCategory(vendors);
+          setLoadingStalls(false);
+          return;
+        }
+      }
+
+      // No subcategory filter - fetch all vendors by stall prefix who have products
       const { data, error } = await supabase
         .from('vendor_profiles')
         .select(`
@@ -297,9 +480,6 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
       if (error) throw error;
 
       setStallsInCategory(data || []);
-        setStallsInCategory(data || []);
-        // Note: detailed subcategory filtering is handled in product search flows where product -> product_categories
-        // The vendor_profiles query here doesn't include product category metadata required for accurate filtering.
     } catch (error) {
       console.error('Error fetching vendors:', error);
       Alert.alert('Error', 'Failed to load vendors');
@@ -321,8 +501,12 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
     try {
       const searchTerm = `%${query}%`;
       
-      // Search for products and get vendor information with prices
-      const { data, error } = await supabase
+      console.log('Searching for products:', query);
+      console.log('Selected category:', selectedCategory);
+      console.log('Selected category ID:', selectedCategoryId);
+      
+      // Build query for products and vendor information with prices
+      let queryBuilder = supabase
         .from('vendor_products')
         .select(`
           id,
@@ -349,26 +533,23 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         .ilike('products.name', searchTerm)
         .eq('status', 'available');
 
+      // If a category is selected, filter by that category
+      if (selectedCategoryId) {
+        console.log('Filtering by category ID:', selectedCategoryId);
+        queryBuilder = queryBuilder.eq('products.category_id', selectedCategoryId);
+      }
+
+      const { data, error } = await queryBuilder;
+
       if (error) throw error;
+      
+      console.log('Product search results:', data?.length || 0, 'items');
 
       // Group by vendor and get lowest price per vendor
       const vendorMap = new Map();
       
-      // If a subcategory is selected, pre-filter rows to those matching the subcategory
-      const prefiltered = (data || []).filter((item: any) => {
-        if (!selectedSubcategory || selectedSubcategory.toLowerCase() === 'all') return true;
-        const sub = selectedSubcategory.toLowerCase();
-        const pc = item.products?.product_categories;
-        let names: string[] = [];
-        if (Array.isArray(pc)) names = pc.map((p: any) => (p?.name || '').toLowerCase());
-        else if (pc && typeof pc === 'object') names = [(pc.name || '').toLowerCase()];
-        // Match against product_categories' names first
-        if (names.some(n => n.includes(sub))) return true;
-        // Fallback to product name matching
-        const prodName = (item.products?.name || '').toString().toLowerCase();
-        if (prodName.includes(sub)) return true;
-        return false;
-      });
+      // No subcategory filtering needed anymore since we're at category level
+      const prefiltered = data || [];
 
       prefiltered.forEach((item: any) => {
         const vendorId = item.vendor_profiles.id;
@@ -687,62 +868,126 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
       if (__DEV__) console.log('VendorHoursCheck error', e);
     }
 
+    const handleAddToStops = () => {
+      const vendorName = vendor.business_name || `${vendor.first_name} ${vendor.last_name}`;
+      
+      // Check if we're in product search mode
+      if (searchMode === 'product' && vendor.productName && vendor.minPrice) {
+        // Add the specific product with its price
+        addItem({
+          productName: vendor.productName,
+          productId: `product-${vendor.id}-${Date.now()}`,
+          vendorName: vendorName,
+          vendorId: vendor.id,
+          stallNumber: vendor.stall_number,
+          price: vendor.minPrice,
+          uom: '',
+          categoryName: vendor.category || selectedCategory || '',
+          categoryId: selectedCategoryId || '',
+        });
+        
+        // Show success modal with product details
+        setSuccessModalData({
+          productName: vendor.productName,
+          price: vendor.minPrice,
+          vendorName: vendorName,
+          stallNumber: vendor.stall_number,
+        });
+        setShowSuccessModal(true);
+      } else {
+        // Add a placeholder item to shopping list representing this vendor/stall
+        addItem({
+          productName: vendorName,
+          productId: `stall-${vendor.stall_number}`,
+          vendorName: vendorName,
+          vendorId: vendor.id,
+          stallNumber: vendor.stall_number,
+          price: 0,
+          uom: '',
+          categoryName: vendor.category || selectedCategory || '',
+          categoryId: '',
+        });
+        
+        // Show success modal for stall visit
+        setSuccessModalData({
+          productName: vendorName,
+          price: 0,
+          vendorName: vendorName,
+          stallNumber: vendor.stall_number,
+        });
+        setShowSuccessModal(true);
+      }
+    };
+
     return (
-      <TouchableOpacity
-        style={styles.vendorCard}
-        onPress={() => {
-          // Set focus to the vendor's stall to show pathfinding
-          if (vendor.stall_number) {
-            setFocusStall(vendor.stall_number);
-            setSelectedVendor(vendor);
-            setShowDirectionModal(true);
-          } else {
-            Alert.alert('No Location', 'Stall location not available');
-          }
-        }}
-      >
-        {vendor.profile_image_url ? (
-          <Image 
-            source={{ uri: vendor.profile_image_url }} 
-            style={styles.vendorAvatar}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.vendorAvatarPlaceholder}>
-            <Text style={styles.vendorAvatarText}>
-              {(vendor.business_name || vendor.first_name || '?').charAt(0).toUpperCase()}
+      <View style={styles.vendorCardContainer}>
+        <TouchableOpacity
+          style={styles.vendorCard}
+          activeOpacity={0.7}
+          onPress={() => {
+            console.log('Vendor card clicked:', vendor.business_name, vendor.stall_number);
+            // Set focus to the vendor's stall to show pathfinding
+            if (vendor.stall_number) {
+              console.log('Opening direction modal for stall:', vendor.stall_number);
+              setFocusStall(vendor.stall_number);
+              setSelectedVendor(vendor);
+              setShowDirectionModal(true);
+            } else {
+              console.log('No stall number available');
+              Alert.alert('No Location', 'Stall location not available');
+            }
+          }}
+        >
+          {vendor.profile_image_url ? (
+            <Image 
+              source={{ uri: vendor.profile_image_url }} 
+              style={styles.vendorAvatar}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.vendorAvatarPlaceholder}>
+              <Text style={styles.vendorAvatarText}>
+                {(vendor.business_name || vendor.first_name || '?').charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.vendorInfo}>
+            <Text style={styles.vendorName}>
+              {vendor.business_name || `${vendor.first_name} ${vendor.last_name}`}
             </Text>
+            <Text style={styles.vendorStall}>🏪 Stall {vendor.stall_number}</Text>
+            {vendor.category && (
+              <Text style={styles.vendorSection}>📍 {vendor.category}</Text>
+            )}
+            {searchMode === 'product' && vendor.productName && (
+              <Text style={styles.vendorProduct}>🛒 {vendor.productName}</Text>
+            )}
+            {searchMode === 'product' && vendor.minPrice && (
+              <Text style={styles.vendorPrice}>
+                💰 ₱{vendor.minPrice.toFixed(2)}
+                {vendor.maxPrice && vendor.maxPrice !== vendor.minPrice && ` - ₱${vendor.maxPrice.toFixed(2)}`}
+              </Text>
+            )}
+            {vendor.operating_hours && searchMode !== 'product' && (
+              <Text style={styles.vendorHours}>
+                🕒 {getTodayOperatingHours(vendor.operating_hours)}
+              </Text>
+            )}
           </View>
-        )}
-        <View style={styles.vendorInfo}>
-          <Text style={styles.vendorName}>
-            {vendor.business_name || `${vendor.first_name} ${vendor.last_name}`}
-          </Text>
-          <Text style={styles.vendorStall}>🏪 Stall {vendor.stall_number}</Text>
-          {vendor.category && (
-            <Text style={styles.vendorSection}>📍 {vendor.category}</Text>
-          )}
-          {searchMode === 'product' && vendor.productName && (
-            <Text style={styles.vendorProduct}>🛒 {vendor.productName}</Text>
-          )}
-          {searchMode === 'product' && vendor.minPrice && (
-            <Text style={styles.vendorPrice}>
-              💰 ₱{vendor.minPrice.toFixed(2)}
-              {vendor.maxPrice && vendor.maxPrice !== vendor.minPrice && ` - ₱${vendor.maxPrice.toFixed(2)}`}
-            </Text>
-          )}
-          {vendor.operating_hours && searchMode !== 'product' && (
-            <Text style={styles.vendorHours}>
-              🕒 {getTodayOperatingHours(vendor.operating_hours)}
-            </Text>
-          )}
-        </View>
-        <View style={styles.vendorStatus}>
-          <Text style={styles.vendorStatusDot}>●</Text>
-        </View>
-      </TouchableOpacity>
+          <View style={styles.vendorStatus}>
+            <Text style={styles.vendorStatusDot}>●</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.addToStopsButton}
+          onPress={handleAddToStops}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.addToStopsIcon}>+</Text>
+        </TouchableOpacity>
+      </View>
     );
-  }, [isVendorOpen, searchMode]);
+  }, [isVendorOpen, searchMode, addItem, selectedCategory, selectedCategoryId]);
 
   const handleLocationSelect = (locationId: string, locationName: string, locationData?: any) => {
     console.log('Location selected:', { locationId, locationName, locationData });
@@ -782,6 +1027,78 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
 
       {/* Main Content - Indoor Map */}
       <View style={styles.mainContent}>
+        {/* Search Bar - Top */}
+        <View style={styles.topSearchBarContainer}>
+          <TextInput
+            style={styles.topSearchInput}
+            placeholder={selectedCategory ? "Search products..." : "Search"}
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              if (selectedCategory) {
+                // Search for products when in category mode
+                searchProductsAndVendors(text);
+              } else {
+                // General search
+                handleSearch(text);
+              }
+            }}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              style={styles.topClearButton}
+              onPress={() => {
+                setSearchQuery('');
+                setSearchResults([]);
+                setProductSearchResults([]);
+                if (selectedCategory) {
+                  fetchStallsByCategory(selectedCategory);
+                }
+              }}
+            >
+              <Text style={styles.clearButtonText}>×</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Top Category Chips */}
+        <View style={styles.topCategoryContainer}>
+          {loadingMainCategories ? (
+            <View style={styles.categoryLoadingContainer}>
+              <ActivityIndicator size="small" color="#666" />
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.topCategoryScrollContent}
+            >
+              {mainCategories.map((category) => {
+                const marketSectionName = category.market_sections?.name;
+                return (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[
+                      styles.topCategoryChip,
+                      selectedCategory === category.name && styles.topCategoryChipSelected
+                    ]}
+                    onPress={() => handleCategoryPress(category.id, category.name, marketSectionName)}
+                  >
+                    <Text style={[
+                      styles.topCategoryChipText,
+                      selectedCategory === category.name && styles.topCategoryChipTextSelected
+                    ]}>
+                      {category.name.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+
         <MapViewComponent 
           onLocationSelect={handleLocationSelect}
           selectedCategory={selectedCategory || undefined}
@@ -810,177 +1127,33 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         )}
       </View>
 
-      {/* Green Banner Overlay */}
+      {/* Bottom Sheet Overlay */}
       <Animated.View
         style={[
           styles.greenBanner,
           {
             transform: [{ translateY: translateY }],
-            backgroundColor: getSectionColor(selectedCategory || undefined),
+            backgroundColor: selectedCategoryColor,
           }
         ]}
       >
         {/* Drag Handle */}
-        <TouchableOpacity
+        <View
           style={styles.dragHandleContainer}
-          onPress={toggleBanner}
+          {...panResponder.panHandlers}
         >
           <View style={styles.dragHandle} />
-          <Text style={styles.dragHint}>
-            {isExpanded ? '↓ Tap to hide' : '↑ Tap to show'}
-          </Text>
-        </TouchableOpacity>
+        </View>
 
         {/* Welcome Message or Category Header */}
         {!selectedCategory ? (
           <View style={styles.welcomeSection}>
             <Text style={styles.welcomeTitle}>Welcome to</Text>
-            <Text style={styles.welcomeSubtitle}>Mapalengke</Text>
-            <View style={styles.separator} />
-            <Text style={styles.promptText}>What are you looking for?</Text>
-            <Text style={styles.hintText}>Search or Select Category</Text>
+            <Text style={styles.welcomeSubtitle}>Toril Public Market</Text>
           </View>
         ) : (
           <View style={styles.categoryHeader}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => {
-                setSelectedCategory(null);
-                setStallsInCategory([]);
-              }}
-            >
-              <Text style={styles.backButtonText}>← {selectedCategory}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Subcategory selector (e.g., Meat -> Pork, Beef, Chicken) */}
-        {selectedCategory && (
-          <View style={styles.subcategoryContainer}>
-            {loadingCategories ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : productCategories.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subcategoryScroll}>
-                <TouchableOpacity
-                  style={[styles.subcategoryButton, !selectedSubcategory && styles.subcategoryButtonActive]}
-                  onPress={() => {
-                    setSelectedSubcategory(null);
-                    // refresh list for category
-                    if (searchQuery.trim().length >= 2) searchProductsAndVendors(searchQuery);
-                    else fetchStallsByCategory(selectedCategory);
-                  }}
-                >
-                  <Text style={[
-                    styles.subcategoryText,
-                    !selectedSubcategory && styles.subcategoryTextActive,
-                    !selectedSubcategory && { color: getSectionColor(selectedCategory || undefined) }
-                  ]}>All</Text>
-                </TouchableOpacity>
-
-                {productCategories.map((pc) => (
-                  <TouchableOpacity
-                    key={pc.id}
-                    style={[styles.subcategoryButton, selectedSubcategory === pc.name && styles.subcategoryButtonActive]}
-                    onPress={() => {
-                      const name = pc.name;
-                      setSelectedSubcategory(name);
-                      // If there's an active search, re-run it filtered; otherwise fetch stalls/vendors for this subcategory
-                      if (searchQuery.trim().length >= 2) {
-                        searchProductsAndVendors(searchQuery);
-                      } else {
-                        fetchStallsByCategory(selectedCategory);
-                      }
-                    }}
-                  >
-                    <Text style={[
-                      styles.subcategoryText,
-                      selectedSubcategory === pc.name && styles.subcategoryTextActive,
-                      selectedSubcategory === pc.name && { color: getSectionColor(selectedCategory || undefined) }
-                    ]}>{pc.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : null}
-          </View>
-        )}
-
-        {/* Search Bar */}
-        <View style={styles.searchBarContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={selectedCategory ? "Search products..." : "Search stalls, products, or vendors..."}
-            placeholderTextColor="#999"
-            value={searchQuery}
-            onChangeText={(text) => {
-              setSearchQuery(text);
-              if (selectedCategory) {
-                // Search for products when in category mode
-                searchProductsAndVendors(text);
-              } else {
-                // General search
-                handleSearch(text);
-              }
-            }}
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity
-              style={styles.clearButton}
-              onPress={() => {
-                setSearchQuery('');
-                setSearchResults([]);
-                setProductSearchResults([]);
-                if (selectedCategory) {
-                  fetchStallsByCategory(selectedCategory);
-                }
-              }}
-            >
-              <Text style={styles.clearButtonText}>×</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Filter Buttons (shown when in category or product search mode) */}
-        {selectedCategory && (
-          <View style={styles.filterContainer}>
-            <Text style={styles.filterLabel}>Sort by:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-              <TouchableOpacity
-                style={[styles.filterButton, sortBy === 'alphabetical' && styles.filterButtonActive]}
-                onPress={() => setSortBy('alphabetical')}
-              >
-                <Text style={[styles.filterButtonText, sortBy === 'alphabetical' && styles.filterButtonTextActive]}>
-                  A-Z
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.filterButton, sortBy === 'price' && styles.filterButtonActive]}
-                onPress={() => setSortBy('price')}
-              >
-                <Text style={[styles.filterButtonText, sortBy === 'price' && styles.filterButtonTextActive]}>
-                  💰 Price
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.filterButton, sortBy === 'distance' && styles.filterButtonActive]}
-                onPress={() => setSortBy('distance')}
-              >
-                <Text style={[styles.filterButtonText, sortBy === 'distance' && styles.filterButtonTextActive]}>
-                  📍 Distance
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.filterButton, sortBy === 'status' && styles.filterButtonActive]}
-                onPress={() => setSortBy('status')}
-              >
-                <Text style={[styles.filterButtonText, sortBy === 'status' && styles.filterButtonTextActive]}>
-                  🟢 Open/Closed
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
+            <Text style={styles.categoryHeaderText}>{selectedCategory}</Text>
           </View>
         )}
 
@@ -1028,12 +1201,89 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
 
         {/* Vendor List or Category Buttons */}
         {selectedCategory ? (
-          <View 
-            style={styles.vendorListContainer}
-          >
+          <View style={styles.vendorListContainer}>
+            {/* Filter Options */}
+            <View style={[styles.bottomSheetFilterContainer, { borderBottomColor: 'rgba(255, 255, 255, 0.3)' }]}>
+              <Text style={[styles.bottomSheetFilterLabel, { color: '#FFFFFF' }]}>Sort by:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterScrollContent}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.bottomSheetFilterChip, 
+                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
+                    sortBy === 'alphabetical' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                  ]}
+                  onPress={() => setSortBy('alphabetical')}
+                >
+                  <Text style={[
+                    styles.bottomSheetFilterChipText, 
+                    { color: '#FFFFFF' },
+                    sortBy === 'alphabetical' && { color: selectedCategoryColor }
+                  ]}>
+                    A-Z
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.bottomSheetFilterChip, 
+                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
+                    sortBy === 'price' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                  ]}
+                  onPress={() => setSortBy('price')}
+                >
+                  <Text style={[
+                    styles.bottomSheetFilterChipText, 
+                    { color: '#FFFFFF' },
+                    sortBy === 'price' && { color: selectedCategoryColor }
+                  ]}>
+                    Price
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.bottomSheetFilterChip, 
+                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
+                    sortBy === 'distance' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                  ]}
+                  onPress={() => setSortBy('distance')}
+                >
+                  <Text style={[
+                    styles.bottomSheetFilterChipText, 
+                    { color: '#FFFFFF' },
+                    sortBy === 'distance' && { color: selectedCategoryColor }
+                  ]}>
+                    Distance
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.bottomSheetFilterChip, 
+                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
+                    sortBy === 'status' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                  ]}
+                  onPress={() => setSortBy('status')}
+                >
+                  <Text style={[
+                    styles.bottomSheetFilterChipText, 
+                    { color: '#FFFFFF' },
+                    sortBy === 'status' && { color: selectedCategoryColor }
+                  ]}>
+                    Open Stalls
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+
+            {/* Vendor List */}
             {loadingStalls ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FFFFFF" />
+                <ActivityIndicator size="large" color="#4CAF50" />
               </View>
             ) : stallsInCategory.length > 0 ? (
               <FlatList
@@ -1053,76 +1303,8 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
               </View>
             )}
           </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryButtonsContainer}
-            style={styles.categoryButtons}
-          >
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Fish') }]}
-              onPress={() => handleCategoryPress('Fish')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Fish</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Meat') }]}
-              onPress={() => handleCategoryPress('Meat')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Meat</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Fruits & Vegetables') }]}
-              onPress={() => handleCategoryPress('Fruits & Vegetables')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Fruits & Vegetables</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Rice & Grain') }]}
-              onPress={() => handleCategoryPress('Rice & Grain')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Rice & Grain</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Grocery') }]}
-              onPress={() => handleCategoryPress('Grocery')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Grocery</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Dried Fish') }]}
-              onPress={() => handleCategoryPress('Dried Fish')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Dried Fish</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.categoryButton, { backgroundColor: getSectionColor('Eatery') }]}
-              onPress={() => handleCategoryPress('Eatery')}
-            >
-              <Text style={[styles.categoryButtonText, styles.categoryButtonTextOnColor]}>Eatery</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        )}
-
-        {/* Search Bar removed as requested */}
+        ) : null}
       </Animated.View>
-
-      {/* Hidden Banner Indicator */}
-      {!isExpanded && (
-        <TouchableOpacity
-          style={[styles.hiddenIndicator, { backgroundColor: getSectionColor(selectedCategory || undefined) }]}
-          onPress={toggleBanner}
-        >
-          <Text style={styles.hiddenIndicatorText}>↑</Text>
-        </TouchableOpacity>
-      )}
 
       {/* Stall List Modal */}
       <Modal
@@ -1274,10 +1456,80 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                   hideBanner();
                 }}
               >
-                <Text style={styles.directionPrimaryButtonText}>Got it!</Text>
+                <Text style={styles.directionPrimaryButtonText}>View in Map</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.successModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSuccessModal(false)}
+        >
+          <View style={styles.successModalContent}>
+            {/* Success Icon */}
+            <View style={styles.successIconContainer}>
+              <View style={styles.successIconCircle}>
+                <Text style={styles.successIconCheck}>✓</Text>
+              </View>
+            </View>
+
+            {/* Success Message */}
+            <Text style={styles.successModalTitle}>Added to My Stops!</Text>
+            
+            {successModalData && (
+              <View style={styles.successModalBody}>
+                {/* Product/Vendor Name */}
+                <View style={styles.successItemRow}>
+                  <Text style={styles.successItemLabel}>
+                    {successModalData.price > 0 ? 'Product' : 'Vendor'}
+                  </Text>
+                  <Text style={styles.successItemValue}>{successModalData.productName}</Text>
+                </View>
+
+                {/* Price (only if > 0) */}
+                {successModalData.price > 0 && (
+                  <View style={styles.successItemRow}>
+                    <Text style={styles.successItemLabel}>Price</Text>
+                    <Text style={styles.successPriceValue}>₱{successModalData.price.toFixed(2)}</Text>
+                  </View>
+                )}
+
+                {/* Vendor Name (only if different from product name) */}
+                {successModalData.price > 0 && (
+                  <View style={styles.successItemRow}>
+                    <Text style={styles.successItemLabel}>From</Text>
+                    <Text style={styles.successItemValue}>{successModalData.vendorName}</Text>
+                  </View>
+                )}
+
+                {/* Stall Number */}
+                <View style={styles.successItemRow}>
+                  <Text style={styles.successItemLabel}>Stall</Text>
+                  <View style={styles.successStallBadge}>
+                    <Text style={styles.successStallText}>{successModalData.stallNumber}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.successModalButton}
+              onPress={() => setShowSuccessModal(false)}
+            >
+              <Text style={styles.successModalButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
 
@@ -1366,68 +1618,72 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#4CAF50',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 30,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: -2,
+      height: -4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 20,
+    zIndex: 1000,
   },
   dragHandleContainer: {
     alignItems: 'center',
     marginBottom: 20,
+    paddingVertical: 5,
+    zIndex: 1001,
   },
   dragHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#E0E0E0',
     borderRadius: 2,
     marginBottom: 8,
   },
   dragHint: {
     fontSize: 12,
-    color: '#FFFFFF',
-    opacity: 0.8,
+    color: '#666',
+    opacity: 0.7,
   },
   welcomeSection: {
     alignItems: 'center',
     marginBottom: 25,
   },
   welcomeTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
     marginBottom: 2,
   },
   welcomeSubtitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#2C2C2C',
     marginBottom: 15,
   },
   separator: {
     width: '80%',
     height: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#E0E0E0',
     marginBottom: 15,
   },
   promptText: {
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#2C2C2C',
     marginBottom: 5,
+    fontWeight: '500',
   },
   hintText: {
     fontSize: 14,
-    color: '#E8F5E8',
-    opacity: 0.8,
+    color: '#999',
+    opacity: 0.9,
   },
   searchBarContainer: {
     paddingHorizontal: 20,
@@ -1530,8 +1786,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
     marginBottom: 15,
+  },
+  categoryHeaderText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   backButton: {
     marginBottom: 8,
@@ -1539,16 +1804,16 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#2C2C2C',
   },
   categoryHeaderSubtitle: {
     fontSize: 14,
-    color: '#E8F5E8',
+    color: '#666',
     marginBottom: 5,
   },
   categoryHeaderCount: {
     fontSize: 12,
-    color: '#FFFFFF',
+    color: '#999',
     opacity: 0.8,
   },
   vendorListContainer: {
@@ -1557,44 +1822,84 @@ const styles = StyleSheet.create({
   },
   vendorListContent: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingTop: 10,
+    paddingBottom: 100,
+  },
+  vendorCardContainer: {
+    position: 'relative',
+    marginBottom: 12,
   },
   vendorCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#66BB6A',
-    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
     padding: 16,
-    marginBottom: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    minHeight: 95,
+  },
+  addToStopsButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
     elevation: 3,
-    minHeight: 100,
+  },
+  addToStopsIcon: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   vendorAvatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 14,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 16,
   },
   vendorAvatarPlaceholder: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#7E57C2',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   vendorAvatarText: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   vendorInfo: {
     flex: 1,
@@ -1604,27 +1909,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 6,
+    letterSpacing: 0.4,
+    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   vendorStall: {
-    fontSize: 13,
-    color: '#E8F5E8',
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontWeight: '600',
+    marginBottom: 2,
   },
   vendorSection: {
-    fontSize: 12,
-    color: '#E8F5E8',
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
+    fontWeight: '500',
   },
   vendorHours: {
-    fontSize: 12,
-    color: '#E8F5E8',
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 2,
+    fontWeight: '500',
   },
   vendorStatus: {
-    marginLeft: 10,
+    marginLeft: 12,
   },
   vendorStatusDot: {
     fontSize: 20,
     color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   categoryButtons: {
     marginBottom: 25,
@@ -1645,21 +1961,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#F5F5F5',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: '#E0E0E0',
   },
   subcategoryButtonActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2C2C2C',
+    borderColor: '#2C2C2C',
   },
   subcategoryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#666',
   },
   subcategoryTextActive: {
-    color: '#4CAF50',
+    color: '#FFFFFF',
   },
   categoryButton: {
     backgroundColor: '#F5F5F5',
@@ -1865,6 +2182,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    zIndex: 9999,
   },
   directionModalContent: {
     backgroundColor: '#FFFFFF',
@@ -1878,8 +2196,9 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.3,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 15,
     position: 'relative',
+    zIndex: 10000,
   },
   directionCloseButton: {
     position: 'absolute',
@@ -1987,11 +2306,27 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   directionModalActions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     padding: 20,
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
+  },
+  directionButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  directionAddToStopsButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+  },
+  directionAddToStopsButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   directionSecondaryButton: {
     flex: 1,
@@ -2016,6 +2351,286 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  shoppingListIcon: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    borderRadius: 25,
+    zIndex: 1000,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  addStopIconContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 40,
+    height: 40,
+  },
+  shoppingListIconText: {
+    fontSize: 28,
+  },
+  addStopPlusIcon: {
+    position: 'absolute',
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    backgroundColor: '#4CAF50',
+    width: 18,
+    height: 18,
+    textAlign: 'center',
+    lineHeight: 18,
+    borderRadius: 9,
+    top: 0,
+    left: 24,
+  },
+  topCategoryContainer: {
+    position: 'absolute',
+    top: 130,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 10,
+  },
+  topSearchBarContainer: {
+    position: 'absolute',
+    top: 70,
+    left: 0,
+    right: 0,
+    zIndex: 101,
+    paddingHorizontal: 20,
+  },
+  topSearchInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#333',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  topClearButton: {
+    position: 'absolute',
+    right: 30,
+    top: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#E0E0E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topCategoryScrollContent: {
+    paddingHorizontal: 6,
+    gap: 8,
+  },
+  categoryLoadingContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  topCategoryChip: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginRight: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  topCategoryChipSelected: {
+    backgroundColor: '#2C2C2C',
+    borderColor: '#2C2C2C',
+    elevation: 6,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  topCategoryChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2C2C2C',
+    letterSpacing: 0.5,
+  },
+  topCategoryChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  bottomSheetFilterContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  bottomSheetFilterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  filterScrollContent: {
+    gap: 8,
+  },
+  bottomSheetFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginRight: 8,
+  },
+  bottomSheetFilterChipSelected: {
+    backgroundColor: '#2C2C2C',
+    borderColor: '#2C2C2C',
+  },
+  bottomSheetFilterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  bottomSheetFilterChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  // Success Modal Styles
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    width: '90%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  successIconContainer: {
+    marginBottom: 20,
+  },
+  successIconCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  successIconCheck: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  successModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#2C2C2C',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  successModalBody: {
+    width: '100%',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+  },
+  successItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E9ECEF',
+  },
+  successItemLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6C757D',
+  },
+  successItemValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C2C2C',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 12,
+  },
+  successPriceValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+  successStallBadge: {
+    backgroundColor: '#2C2C2C',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  successStallText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  successModalButton: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  successModalButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 });
 
