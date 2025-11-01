@@ -9,7 +9,6 @@ import {
   Animated,
   ScrollView,
   Alert,
-  Modal,
   FlatList,
   ActivityIndicator,
   TextInput,
@@ -21,6 +20,9 @@ import { RootStackParamList } from '../../../navigation/types';
 import MapViewComponent from '../../map/MapView';
 import { supabase } from '../../../services/supabase';
 import { useShoppingList } from '../../../context/ShoppingListContext';
+import NavigationModal from '../../modals/NavigationModal';
+import StallListModal from '../../modals/StallListModal';
+import AddedToStopsModal from '../../modals/AddedToStopsModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
 
@@ -132,6 +134,11 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [showDirectionModal, setShowDirectionModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
 
+  // Added to Stops modal states
+  const [showAddedToStopsModal, setShowAddedToStopsModal] = useState(false);
+  const [addedToStopsTitle, setAddedToStopsTitle] = useState('');
+  const [addedToStopsMessage, setAddedToStopsMessage] = useState('');
+
   // Shopping list context
   const { addItem } = useShoppingList();
 
@@ -216,18 +223,6 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
       navigation.setParams({ focusStall: undefined, stallName: undefined });
     }
   }, [route.params, navigation]);
-
-  const toggleBanner = () => {
-    const toValue = isExpanded ? 400 : 0; // 400 to partially hide, showing header
-    Animated.spring(translateY, {
-      toValue,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 8,
-    }).start(() => {
-      setIsExpanded(!isExpanded);
-    });
-  };
 
   const hideBanner = useCallback(() => {
     if (isExpanded) {
@@ -878,11 +873,9 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         });
         
         // Show success confirmation with product details
-        Alert.alert(
-          '✓ Added to My Stops', 
-          `${vendor.productName} - ₱${vendor.minPrice.toFixed(2)}\nFrom ${vendorName} (Stall ${vendor.stall_number})`,
-          [{ text: 'OK' }]
-        );
+        setAddedToStopsTitle('✓ Added to My Stops');
+        setAddedToStopsMessage(`${vendor.productName} - ₱${vendor.minPrice.toFixed(2)}\nFrom ${vendorName} (Stall ${vendor.stall_number})`);
+        setShowAddedToStopsModal(true);
       } else {
         // Add a placeholder item to shopping list representing this vendor/stall
         addItem({
@@ -898,11 +891,9 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         });
         
         // Show success confirmation
-        Alert.alert(
-          '✓ Added to My Stops', 
-          `${vendorName} (Stall ${vendor.stall_number}) has been added to your stops list.`,
-          [{ text: 'OK' }]
-        );
+        setAddedToStopsTitle('✓ Added to My Stops');
+        setAddedToStopsMessage(`${vendorName} (Stall ${vendor.stall_number}) has been added to your stops list.`);
+        setShowAddedToStopsModal(true);
       }
     };
 
@@ -1190,8 +1181,8 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         {selectedCategory ? (
           <View style={styles.vendorListContainer}>
             {/* Filter Options */}
-            <View style={[styles.bottomSheetFilterContainer, { borderBottomColor: 'rgba(255, 255, 255, 0.3)' }]}>
-              <Text style={[styles.bottomSheetFilterLabel, { color: '#FFFFFF' }]}>Sort by:</Text>
+            <View style={[styles.bottomSheetFilterContainer, styles.bottomSheetFilterContainerWhiteBorder]}>
+              <Text style={[styles.bottomSheetFilterLabel, styles.bottomSheetFilterLabelWhite]}>Sort by:</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1200,14 +1191,14 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                 <TouchableOpacity
                   style={[
                     styles.bottomSheetFilterChip, 
-                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
-                    sortBy === 'alphabetical' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                    styles.bottomSheetFilterChipDefault,
+                    sortBy === 'alphabetical' && styles.bottomSheetFilterChipWhiteSelected
                   ]}
                   onPress={() => setSortBy('alphabetical')}
                 >
                   <Text style={[
                     styles.bottomSheetFilterChipText, 
-                    { color: '#FFFFFF' },
+                    styles.bottomSheetFilterChipTextWhite,
                     sortBy === 'alphabetical' && { color: selectedCategoryColor }
                   ]}>
                     A-Z
@@ -1217,14 +1208,14 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                 <TouchableOpacity
                   style={[
                     styles.bottomSheetFilterChip, 
-                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
-                    sortBy === 'price' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                    styles.bottomSheetFilterChipDefault,
+                    sortBy === 'price' && styles.bottomSheetFilterChipWhiteSelected
                   ]}
                   onPress={() => setSortBy('price')}
                 >
                   <Text style={[
                     styles.bottomSheetFilterChipText, 
-                    { color: '#FFFFFF' },
+                    styles.bottomSheetFilterChipTextWhite,
                     sortBy === 'price' && { color: selectedCategoryColor }
                   ]}>
                     Price
@@ -1234,14 +1225,14 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                 <TouchableOpacity
                   style={[
                     styles.bottomSheetFilterChip, 
-                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
-                    sortBy === 'distance' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                    styles.bottomSheetFilterChipDefault,
+                    sortBy === 'distance' && styles.bottomSheetFilterChipWhiteSelected
                   ]}
                   onPress={() => setSortBy('distance')}
                 >
                   <Text style={[
                     styles.bottomSheetFilterChipText, 
-                    { color: '#FFFFFF' },
+                    styles.bottomSheetFilterChipTextWhite,
                     sortBy === 'distance' && { color: selectedCategoryColor }
                   ]}>
                     Distance
@@ -1251,14 +1242,14 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
                 <TouchableOpacity
                   style={[
                     styles.bottomSheetFilterChip, 
-                    { backgroundColor: 'rgba(255, 255, 255, 0.2)', borderColor: 'rgba(255, 255, 255, 0.3)' },
-                    sortBy === 'status' && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }
+                    styles.bottomSheetFilterChipDefault,
+                    sortBy === 'status' && styles.bottomSheetFilterChipWhiteSelected
                   ]}
                   onPress={() => setSortBy('status')}
                 >
                   <Text style={[
                     styles.bottomSheetFilterChipText, 
-                    { color: '#FFFFFF' },
+                    styles.bottomSheetFilterChipTextWhite,
                     sortBy === 'status' && { color: selectedCategoryColor }
                   ]}>
                     Open Stalls
@@ -1294,161 +1285,46 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
       </Animated.View>
 
       {/* Stall List Modal */}
-      <Modal
+      <StallListModal
         visible={showStallList}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => {
+        categoryName={selectedCategory}
+        stalls={stallsInCategory}
+        loading={loadingStalls}
+        onClose={() => {
           setShowStallList(false);
           setSelectedCategory(null);
         }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {selectedCategory} Stalls ({stallsInCategory.length})
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowStallList(false);
-                  setSelectedCategory(null);
-                }}
-              >
-                <Text style={styles.closeButton}>×</Text>
-              </TouchableOpacity>
-            </View>
-
-            {loadingStalls ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4CAF50" />
-                <Text style={styles.loadingText}>Loading stalls...</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={stallsInCategory}
-                keyExtractor={(item) => item.stall_id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.stallItem}
-                    onPress={() => {
-                      setShowStallList(false);
-                      handleStallClick(item.stall_number);
-                    }}
-                  >
-                    <Text style={styles.stallNumber}>{item.stall_number}</Text>
-                    <Text style={styles.stallHint}>Tap to view vendor</Text>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No stalls found in this category</Text>
-                  </View>
-                }
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
+        onStallPress={handleStallClick}
+      />
 
       {/* Custom Direction Modal */}
-      <Modal
+      <NavigationModal
         visible={showDirectionModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowDirectionModal(false)}
-      >
-        <TouchableOpacity 
-          style={styles.directionModalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowDirectionModal(false)}
-        >
-          <TouchableOpacity 
-            style={styles.directionModalContent}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Close Button */}
-            <TouchableOpacity 
-              style={styles.directionCloseButton}
-              onPress={() => setShowDirectionModal(false)}
-            >
-              <Text style={styles.directionCloseButtonText}>✕</Text>
-            </TouchableOpacity>
+        vendor={selectedVendor}
+        onClose={() => setShowDirectionModal(false)}
+        onViewDetails={() => {
+          setShowDirectionModal(false);
+          if (selectedVendor) {
+            navigation.navigate('VendorDetails', {
+              vendorId: selectedVendor.id,
+              vendorName: selectedVendor.business_name || `${selectedVendor.first_name} ${selectedVendor.last_name}`,
+            });
+          }
+        }}
+        onConfirm={() => {
+          setShowDirectionModal(false);
+          // Hide the bottom sheet to show the map and direction
+          hideBanner();
+        }}
+      />
 
-            {/* Header with icon */}
-            <View style={styles.directionModalHeader}>
-              <View style={styles.directionIconContainer}>
-                <Text style={styles.directionIcon}>🧭</Text>
-              </View>
-              <Text style={styles.directionModalTitle}>Navigation</Text>
-            </View>
-
-            {/* Vendor Info */}
-            {selectedVendor && (
-              <View style={styles.directionModalBody}>
-                <View style={styles.directionVendorCard}>
-                  {selectedVendor.profile_image_url ? (
-                    <Image 
-                      source={{ uri: `${selectedVendor.profile_image_url}?v=${Date.now()}` }} 
-                      style={styles.directionVendorImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.directionVendorImagePlaceholder}>
-                      <Text style={styles.directionVendorInitial}>
-                        {(selectedVendor.business_name || selectedVendor.first_name || '?').charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.directionVendorInfo}>
-                    <Text style={styles.directionVendorName}>
-                      {selectedVendor.business_name || `${selectedVendor.first_name} ${selectedVendor.last_name}`}
-                    </Text>
-                    <View style={styles.directionStallBadge}>
-                      <Text style={styles.directionStallIcon}>📍</Text>
-                      <Text style={styles.directionStallText}>Stall {selectedVendor.stall_number}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <Text style={styles.directionMessage}>
-                  Follow the blue path on the map to reach your destination
-                </Text>
-              </View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.directionModalActions}>
-              <TouchableOpacity
-                style={styles.directionSecondaryButton}
-                onPress={() => {
-                  setShowDirectionModal(false);
-                  if (selectedVendor) {
-                    navigation.navigate('VendorDetails', {
-                      vendorId: selectedVendor.id,
-                      vendorName: selectedVendor.business_name || `${selectedVendor.first_name} ${selectedVendor.last_name}`,
-                    });
-                  }
-                }}
-              >
-                <Text style={styles.directionSecondaryButtonText}>View Details</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.directionPrimaryButton}
-                onPress={() => {
-                  setShowDirectionModal(false);
-                  // Hide the bottom sheet to show the map and direction
-                  hideBanner();
-                }}
-              >
-                <Text style={styles.directionPrimaryButtonText}>Got it!</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      {/* Added to Stops Modal */}
+      <AddedToStopsModal
+        visible={showAddedToStopsModal}
+        title={addedToStopsTitle}
+        message={addedToStopsMessage}
+        onClose={() => setShowAddedToStopsModal(false)}
+      />
 
     </SafeAreaView>
   );
@@ -1971,57 +1847,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    paddingBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  modalCloseButton: {
-    fontSize: 28,
-    color: '#666',
-    padding: 5,
-  },
-  stallItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  stallNumber: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  stallName: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  stallHint: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
   loadingContainer: {
     padding: 40,
     alignItems: 'center',
@@ -2091,183 +1916,6 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     marginTop: 2,
     fontWeight: '600',
-  },
-  // Direction Modal Styles
-  directionModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    zIndex: 9999,
-  },
-  directionModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
-    position: 'relative',
-    zIndex: 10000,
-  },
-  directionCloseButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  directionCloseButtonText: {
-    fontSize: 20,
-    color: '#666666',
-    fontWeight: '600',
-  },
-  directionModalHeader: {
-    alignItems: 'center',
-    paddingTop: 32,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  directionIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  directionIcon: {
-    fontSize: 40,
-  },
-  directionModalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2C2C2C',
-  },
-  directionModalBody: {
-    padding: 24,
-  },
-  directionVendorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
-  },
-  directionVendorImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 16,
-  },
-  directionVendorImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  directionVendorInitial: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  directionVendorInfo: {
-    flex: 1,
-  },
-  directionVendorName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2C2C2C',
-    marginBottom: 6,
-  },
-  directionStallBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  directionStallIcon: {
-    fontSize: 14,
-    marginRight: 6,
-  },
-  directionStallText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  directionMessage: {
-    fontSize: 15,
-    color: '#666666',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  directionModalActions: {
-    flexDirection: 'column',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  directionButtonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  directionAddToStopsButton: {
-    width: '100%',
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-  },
-  directionAddToStopsButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  directionSecondaryButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-  },
-  directionSecondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666666',
-  },
-  directionPrimaryButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-  },
-  directionPrimaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
   shoppingListIcon: {
     position: 'absolute',
@@ -2426,6 +2074,24 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   bottomSheetFilterChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  // Filter styles with white theme
+  bottomSheetFilterContainerWhiteBorder: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  bottomSheetFilterLabelWhite: {
+    color: '#FFFFFF',
+  },
+  bottomSheetFilterChipDefault: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  bottomSheetFilterChipWhiteSelected: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  bottomSheetFilterChipTextWhite: {
     color: '#FFFFFF',
   },
 });
