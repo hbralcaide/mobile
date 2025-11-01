@@ -14,6 +14,7 @@ import {
     ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
 
@@ -36,6 +37,8 @@ interface VendorProduct {
 interface VendorInfo {
     id: string;
     business_name: string;
+    first_name?: string;
+    last_name?: string;
     phone_number?: string;
     stall?: {
         stall_number: string;
@@ -52,6 +55,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [profileImage, setProfileImage] = useState<string | null>(null);
+    const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
 
     
 
@@ -133,7 +137,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             // Fetch vendor profile now that we have a UUID vendor id
             const { data: vpData, error: vpError } = await supabase
                 .from('vendor_profiles')
-                .select('id, business_name, phone_number, stall_number, complete_address, profile_image_url')
+                .select('id, business_name, first_name, last_name, phone_number, stall_number, complete_address, profile_image_url, operating_hours')
                 .eq('id', resolvedVendorId)
                 .single();
 
@@ -245,20 +249,67 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         };
     }, [vendorId, fetchVendorDetails]);
 
+    // Subscribe to vendor_profiles changes for the loaded vendor so updates (like operating_hours) show immediately
+    useEffect(() => {
+        if (!vendor?.id) return;
+        const profileChannel = supabase.channel(`vendor-profiles-${vendor.id}`);
+        profileChannel
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'vendor_profiles',
+                    filter: `id=eq.${vendor.id}`,
+                },
+                (_payload) => {
+                    // Re-fetch vendor details when profile row changes
+                    fetchVendorDetails();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            profileChannel.unsubscribe();
+        };
+    }, [vendor?.id, fetchVendorDetails]);
+
+    // While the screen is focused, tick current time every 30 seconds so UI (open/closed) updates automatically
+    const isFocused = useIsFocused();
+    useEffect(() => {
+        if (!isFocused) return;
+        setCurrentTimeMs(Date.now());
+        const id = setInterval(() => setCurrentTimeMs(Date.now()), 30 * 1000);
+        return () => clearInterval(id);
+    }, [isFocused]);
+
+    // Re-fetch vendor details when screen becomes focused so UI stays up-to-date
+    useEffect(() => {
+        if (isFocused) fetchVendorDetails();
+    }, [isFocused, fetchVendorDetails]);
+
     const handleDirections = () => {
-        const stallInfo = vendor?.stall?.stall_number ?
-            `Stall ${vendor.stall.stall_number}` :
-            vendor?.business_name;
+        const stallNumber = vendor?.stall?.stall_number;
+        const businessName = vendor?.business_name;
+
+        if (!stallNumber) {
+            Alert.alert('No Location', 'Stall location not available');
+            return;
+        }
 
         Alert.alert(
-            'Directions',
-            `Navigate to ${stallInfo}?`,
+            'Get Directions',
+            `Navigate to Stall ${stallNumber}?`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                    text: 'Get Directions', onPress: () => {
-                        // Here you can integrate with maps or your indoor navigation
-                        Alert.alert('Coming Soon', 'Navigation feature will be implemented soon!');
+                    text: 'Show on Map', 
+                    onPress: () => {
+                        // Navigate back to Market screen with the stall info
+                        navigation.navigate('Market', {
+                            focusStall: stallNumber,
+                            stallName: businessName
+                        });
                     }
                 },
             ]
@@ -310,36 +361,94 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     );
 
     const getOperatingHours = () => {
-        if (!vendor || !('operating_hours' in vendor) || !vendor.operating_hours) return { text: '6:00 AM - 6:00 PM', online: false };
+        if (!vendor || !('operating_hours' in vendor) || !vendor.operating_hours) {
+            return { text: 'Hours not available', online: false, dayName: 'Today' };
+        }
+
         try {
-            const schedule = JSON.parse((vendor as any).operating_hours);
-            const today = new Date();
-            const dayIdx = today.getDay();
-            const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-            const dayName = days[dayIdx];
-            const daySchedule = schedule[dayName];
-            if (daySchedule && daySchedule.open) {
-                const [startHour, startMin] = daySchedule.start.split(/:| /).map(Number);
-                const [endHour, endMin] = daySchedule.end.split(/:| /).map(Number);
-                const start = new Date(today);
-                const end = new Date(today);
-                start.setHours(startHour, isNaN(startMin) ? 0 : startMin, 0, 0);
-                end.setHours(endHour, isNaN(endMin) ? 0 : endMin, 0, 0);
-                const now = today.getTime();
-                const online = now >= start.getTime() && now <= end.getTime();
-                return { text: `${daySchedule.start} - ${daySchedule.end}`, online };
+            // Parse the operating hours JSON or accept object
+            const schedule = typeof (vendor as any).operating_hours === 'string'
+                ? JSON.parse((vendor as any).operating_hours)
+                : (vendor as any).operating_hours;
+
+            const now = new Date();
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const currentDayName = dayNames[now.getDay()];
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+            // Find today's schedule with tolerant key lookup
+            let daySchedule: any = null;
+            if (schedule && typeof schedule === 'object' && !Array.isArray(schedule)) {
+                const possibleKeys = [
+                    currentDayName,
+                    currentDayName.toLowerCase(),
+                    currentDayName.slice(0,3),
+                    currentDayName.slice(0,3).toLowerCase(),
+                ];
+                for (const k of possibleKeys) {
+                    if (Object.prototype.hasOwnProperty.call(schedule, k)) {
+                        daySchedule = schedule[k];
+                        break;
+                    }
+                }
             }
-            return { text: 'Closed today', online: false };
+
+            // Support array-style schedules like [{ day: 'Saturday', start: '4:14 AM', end: '5:00 PM', open: true }, ...]
+            if (!daySchedule && Array.isArray(schedule)) {
+                daySchedule = schedule.find((e: any) => {
+                    if (!e) return false;
+                    const d = e.day || e.name || e.weekday;
+                    if (!d) return false;
+                    const dn = String(d).toLowerCase();
+                    return dn.includes(currentDayName.toLowerCase()) || dn === currentDayName.slice(0,3).toLowerCase();
+                }) || null;
+            }
+
+            if (!daySchedule) return { text: 'Closed today', online: false, dayName: currentDayName };
+
+            // Closed flags
+            if (daySchedule.isClosed === true || daySchedule.open === false) {
+                return { text: 'Closed today', online: false, dayName: currentDayName };
+            }
+
+            const startStr = daySchedule.start || daySchedule.openAt || daySchedule.open_time || null;
+            const endStr = daySchedule.end || daySchedule.closeAt || daySchedule.close_time || null;
+            if (!startStr || !endStr) return { text: 'Hours not set', online: false, dayName: currentDayName };
+
+            const parseToMinutes = (t: string | null): number | null => {
+                if (!t) return null;
+                const s = String(t).trim();
+                const m = s.match(/^(\d{1,2}):(\d{2})(?:\s*([AaPp]\.?\s*[Mm]\.?))?$/);
+                if (!m) return null;
+                let hh = parseInt(m[1].replace(/^0+/, '') || '0', 10);
+                const mm = parseInt(m[2], 10);
+                const ampmRaw = m[3];
+                if (ampmRaw) {
+                    const up = ampmRaw.replace(/\./g, '').toUpperCase();
+                    if (up.startsWith('P') && hh !== 12) hh += 12;
+                    if (up.startsWith('A') && hh === 12) hh = 0;
+                }
+                return hh * 60 + mm;
+            };
+
+            const startMin = parseToMinutes(startStr);
+            const endMin = parseToMinutes(endStr);
+            if (startMin === null || endMin === null) return { text: `${startStr} - ${endStr}`, online: false, dayName: currentDayName };
+
+            let isOpen = false;
+            if (startMin <= endMin) {
+                isOpen = currentMinutes >= startMin && currentMinutes <= endMin;
+            } else {
+                // Overnight
+                isOpen = currentMinutes >= startMin || currentMinutes <= endMin;
+            }
+
+            return { text: `${startStr} - ${endStr}`, online: isOpen, dayName: currentDayName };
         } catch (err) {
-            return { text: '6:00 AM - 6:00 PM', online: false };
+            console.error('Error parsing operating hours:', err);
+            return { text: 'Hours not available', online: false, dayName: 'Today' };
         }
     };
-                        {(() => {
-                            const hours = getOperatingHours();
-                            return (
-                                <Text style={[styles.detailTime, { color: hours.online ? '#22C55E' : '#E53935' }]}>⏰ {hours.text}</Text>
-                            );
-                        })()}
 
     if (loading) {
         return (
@@ -375,15 +484,32 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Vendor Profile Section */}
                 <View style={styles.profileSection}>
-                    <View style={styles.profileImageContainer}>
-                        {profileImage ? (
-                            <Image source={{ uri: profileImage }} style={styles.profileImage} />
-                        ) : (
-                            <View style={styles.profileImagePlaceholder} />
-                        )}
-                    </View>
+                    {(() => {
+                        const hours = getOperatingHours();
+                        const isOpen = hours.online;
+                        const borderColor = isOpen ? '#4CAF50' : '#E53935';
+                        // Dev logging to inspect operating_hours parsing when viewing vendor details
+                        try {
+                            if (__DEV__) console.warn(`VendorDetailsHours id=${vendor?.id} online=${hours.online} operating_hours=${String((vendor as any)?.operating_hours)}`);
+                        } catch (e) { if (__DEV__) console.warn('VendorDetailsHours error', e); }
+                        
+                        return (
+                            <View style={[styles.profileImageContainer, { borderColor }]}>
+                                {profileImage ? (
+                                    <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                                ) : (
+                                    <View style={styles.profileImagePlaceholder} />
+                                )}
+                            </View>
+                        );
+                    })()}
 
                     <Text style={styles.vendorName}>{vendor.business_name}</Text>
+                    {(vendor.first_name || vendor.last_name) && (
+                        <Text style={styles.vendorOwnerName}>
+                            {[vendor.first_name, vendor.last_name].filter(Boolean).join(' ')}
+                        </Text>
+                    )}
 
                     <View style={styles.vendorDetails}>
                         {vendor.stall?.stall_number && (
@@ -394,6 +520,23 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                         {vendor.phone_number && (
                             <Text style={styles.detailText}>📞 Contact No.: {vendor.phone_number}</Text>
                         )}
+                        {(() => {
+                            const hours = getOperatingHours();
+                            const statusColor = hours.online ? '#22C55E' : '#E53935';
+                            try {
+                                if (__DEV__) console.warn(`VendorDetailsHoursInline id=${vendor?.id} online=${hours.online} operating_hours=${String((vendor as any)?.operating_hours)}`);
+                            } catch (e) { if (__DEV__) console.warn('VendorDetailsHoursInline error', e); }
+                            return (
+                                <View style={styles.operatingHoursContainer}>
+                                    <Text style={styles.detailText}>
+                                        ⏰ {hours.dayName}: {hours.text}
+                                    </Text>
+                                    <Text style={[styles.statusText, { color: statusColor }]}>
+                                        {hours.online ? '● Open' : '● Closed'}
+                                    </Text>
+                                </View>
+                            );
+                        })()}
                     </View>
                 </View>
 
@@ -500,8 +643,15 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: 'bold',
         color: '#333333',
+        marginBottom: 4,
+        textAlign: 'center',
+    },
+    vendorOwnerName: {
+        fontSize: 16,
+        color: '#666666',
         marginBottom: 12,
         textAlign: 'center',
+        fontStyle: 'italic',
     },
     vendorDetails: {
         alignItems: 'center',
@@ -510,6 +660,16 @@ const styles = StyleSheet.create({
     detailText: {
         fontSize: 14,
         color: '#666666',
+        textAlign: 'center',
+    },
+    operatingHoursContainer: {
+        marginTop: 8,
+        alignItems: 'center',
+        gap: 4,
+    },
+    statusText: {
+        fontSize: 14,
+        fontWeight: 'bold',
         textAlign: 'center',
     },
     detailTime: {

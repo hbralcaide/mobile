@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   // Public Routes
   Home: undefined;
-  Market: undefined;
+  Market: { focusStall?: string; stallName?: string } | undefined;
   CategoryList: undefined;
   ProductList: { categoryId: string };
   ProductDetails: { productId: string };
