@@ -278,6 +278,9 @@ const ShoppingListScreen: React.FC<Props> = ({ navigation }) => {
   const handleViewOnMap = () => {
     const stalls = getUniqueStalls();
     
+    console.log('handleViewOnMap - stalls:', stalls);
+    console.log('handleViewOnMap - stall numbers:', stalls.map(s => s.stallNumber));
+    
     if (stalls.length === 0) {
       Alert.alert('Empty List', 'Add some products to your market list first!');
       return;
@@ -302,6 +305,10 @@ const ShoppingListScreen: React.FC<Props> = ({ navigation }) => {
         },
       ]
     );
+  };
+
+  const handleNavigateToVendor = (vendorId: string, vendorName: string) => {
+    navigation.navigate('VendorDetails', { vendorId, vendorName });
   };
 
   const renderSearchResult = ({ item }: { item: ProductSearchResult }) => {
@@ -573,19 +580,28 @@ const ShoppingListScreen: React.FC<Props> = ({ navigation }) => {
                                 </View>
                               </TouchableOpacity>
 
-                              <View style={styles.itemContent}>
+                              <TouchableOpacity
+                                style={styles.itemContent}
+                                onPress={() => handleNavigateToVendor(item.vendorId, item.vendorName || 'Vendor')}
+                                activeOpacity={0.7}
+                              >
                                 <Text style={[styles.productName, item.isDone && styles.textDone]}>
                                   {item.productName}
                                 </Text>
-                                <Text style={styles.vendorInfo}>
-                                  📍 {item.vendorName} • Stall {item.stallNumber}
+                                {item.vendorName && (
+                                  <Text style={styles.vendorInfo}>
+                                    🏪 {item.vendorName}
+                                  </Text>
+                                )}
+                                <Text style={styles.stallInfo}>
+                                  📍 Stall {item.stallNumber}
                                 </Text>
                                 {item.price > 0 && (
                                   <Text style={styles.priceInfo}>
                                     ₱{item.price.toFixed(2)}{item.uom ? ` / ${item.uom}` : ''}
                                   </Text>
                                 )}
-                              </View>
+                              </TouchableOpacity>
 
                               <TouchableOpacity
                                 style={styles.removeButton}
@@ -772,6 +788,11 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 2,
   },
+  stallInfo: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
+  },
   priceInfo: {
     fontSize: 14,
     fontWeight: 'bold',
@@ -792,6 +813,7 @@ const styles = StyleSheet.create({
   },
   searchResultsList: {
     padding: 16,
+    flexGrow: 1,
   },
   searchResultCard: {
     backgroundColor: '#FFFFFF',

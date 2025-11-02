@@ -36,6 +36,7 @@ export const ShoppingListProvider: React.FC<{ children: ReactNode }> = ({ childr
       isDone: false,
       addedAt: Date.now(),
     };
+    console.log('ShoppingListContext - Adding item:', newItem);
     setItems(prev => [...prev, newItem]);
   };
 

@@ -1,12 +1,9 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
 import { RootStackParamList } from './src/navigation/types';
 import { linkingConfig } from './src/navigation/linking';
-import { ShoppingListProvider } from './src/context/ShoppingListContext';
-import { Text } from 'react-native';
 import './src/i18n';
 
 // ============ PUBLIC SCREENS ============
@@ -17,15 +14,6 @@ import './src/i18n';
  * - Entry point for both customers and vendors
  */
 import HomeScreen from './src/components/screens/public/HomeScreen';
-
-/**
- * ShoppingListScreen: Create and manage shopping list
- * - Search for products across all vendors
- * - Add items to shopping list
- * - View optimized route to visit selected stalls
- * - Mark items as done while shopping
- */
-import ShoppingListScreen from './src/components/screens/public/ShoppingListScreen';
 
 /**
  * MarketScreen: Overview of the Toril Public Market
@@ -139,69 +127,6 @@ import ShopProfileScreen from './src/components/screens/vendor/ShopProfileScreen
  * Handles route parameters and screen transitions
  */
 const Stack = createNativeStackNavigator<RootStackParamList>();
-// @ts-ignore - Using untyped tab navigator for flexibility
-const Tab = createBottomTabNavigator();
-
-const iconStyle = { fontSize: 24 };
-
-// Tab icons
-const ExploreIcon = () => <Text style={iconStyle}>🗺️</Text>;
-const MyStopsIcon = () => <Text style={iconStyle}>📍</Text>;
-
-/**
- * Bottom Tab Navigator for main app sections
- * Contains Explore (Map) and My Stops (Shopping List)
- */
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: '#2C2C2C',
-        tabBarInactiveTintColor: '#999',
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 0,
-          height: 65,
-          paddingBottom: 10,
-          paddingTop: 8,
-          shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: -2,
-          },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          letterSpacing: 0.3,
-        },
-        headerShown: false,
-      }}
-    >
-      {/* @ts-ignore - Tab navigator handles navigation props */}
-      <Tab.Screen
-        name="MarketTab"
-        component={MarketScreen}
-        options={{
-          tabBarLabel: 'Explore',
-          tabBarIcon: ExploreIcon,
-        }}
-      />
-      {/* @ts-ignore - Tab navigator handles navigation props */}
-      <Tab.Screen
-        name="ShoppingListTab"
-        component={ShoppingListScreen}
-        options={{
-          tabBarLabel: 'My Stops',
-          tabBarIcon: MyStopsIcon,
-        }}
-      />
-    </Tab.Navigator>
-  );
-}
 
 /**
  * Main App Component
@@ -212,31 +137,26 @@ function MainTabs() {
  */
 function App(): React.ReactElement {
   return (
-    <ShoppingListProvider>
-      <PaperProvider>
-        <NavigationContainer linking={linkingConfig}>
-          <Stack.Navigator initialRouteName="Home">
-            {/* ====== Public Routes ======
-             * These routes are accessible to all users without authentication
-             * Includes market browsing, product viewing, and vendor discovery
-             */}
-            <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{ headerTitle: '', title: '' }}
-            />
-            <Stack.Screen
-              name="ShoppingList"
-              component={ShoppingListScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Market"
-              component={MainTabs}
-              options={{ 
-                headerShown: false,
-              }}
-            />
+    <PaperProvider>
+      <NavigationContainer linking={linkingConfig}>
+        <Stack.Navigator initialRouteName="Home">
+          {/* ====== Public Routes ======
+           * These routes are accessible to all users without authentication
+           * Includes market browsing, product viewing, and vendor discovery
+           */}
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{ headerTitle: '', title: '' }}
+          />
+          <Stack.Screen
+            name="Market"
+            component={MarketScreen}
+            options={{ 
+              headerTransparent: true,
+              headerTitle: '',
+            }}
+          />
           {/* Category browsing and product discovery flow */}
           <Stack.Screen name="CategoryList" component={CategoryListScreen} />
           <Stack.Screen name="ProductList" component={ProductListScreen} />
@@ -301,7 +221,6 @@ function App(): React.ReactElement {
         </Stack.Navigator>
       </NavigationContainer>
     </PaperProvider>
-    </ShoppingListProvider>
   );
 }
 

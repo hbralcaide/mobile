@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapView as MappedInMapView, useMap, Marker, Path } from '@mappedin/react-native-sdk';
 import Geolocation from '@react-native-community/geolocation';
@@ -37,67 +37,8 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
   const [categoryVendors, setCategoryVendors] = useState<Array<{ stallNumber: string; vendorName: string; poi_id: string }>>([]);
   const [userMapCoordinate, setUserMapCoordinate] = useState<any>(null);
   const hasInitiallyFocusedRef = useRef(false); // Track if we've focused on user location initially
-  const [showEntranceSelector, setShowEntranceSelector] = useState(false);
-  const [_manualPositionMode, setManualPositionMode] = useState(false); // Track if using manual position
 
   // Debug modal state removed - now using navigation instead
-
-  // Market entrance positions (approximate coordinates based on map layout)
-  const MARKET_ENTRANCES = useMemo(() => [
-    { id: 'main', name: 'Main Entrance (North)', lat: 7.018556, lng: 125.495556, description: 'McArthur Highway side' },
-    { id: 'south', name: 'South Entrance', lat: 7.018111, lng: 125.495556, description: 'Parking area side' },
-    { id: 'east', name: 'East Gate', lat: 7.018333, lng: 125.495833, description: 'Near jeepney terminal' },
-    { id: 'west', name: 'West Gate', lat: 7.018333, lng: 125.495278, description: 'Residential side' },
-  ], []);
-
-  // Function to manually set user position at an entrance
-  const setManualPosition = useCallback(async (entrance: typeof MARKET_ENTRANCES[0]) => {
-    if (!mapView || !mapData) return;
-
-    try {
-      const floors = mapData.getByType('floor');
-      if (floors && floors.length > 0) {
-        const currentFloor = floors[0];
-        
-        // Create coordinate from entrance position
-        const coordinate = await mapView.createCoordinate({
-          latitude: entrance.lat,
-          longitude: entrance.lng,
-          floorId: currentFloor.id,
-        });
-        
-        console.log(`📍 Manual position set at: ${entrance.name}`);
-        setUserMapCoordinate(coordinate);
-        setManualPositionMode(true);
-        setShowEntranceSelector(false);
-        
-        // Set the GPS location state as well for compatibility
-        setUserLocation({
-          latitude: entrance.lat,
-          longitude: entrance.lng,
-        });
-        
-        // Focus camera on the manual position
-        if (!highlightedStall) {
-          mapView.Camera.focusOn(coordinate);
-        }
-        
-        Alert.alert(
-          'Position Set',
-          `Your location has been set to ${entrance.name}. The blue dot shows your position, and you can now navigate to any stall.`,
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error setting manual position:', error);
-      Alert.alert('Error', 'Could not set your position. Please try again.');
-    }
-  }, [mapView, mapData, highlightedStall]);
-
-  // Show entrance selector
-  const handleSetMyLocation = useCallback(() => {
-    setShowEntranceSelector(true);
-  }, []);
 
   const startLocationTracking = React.useCallback(() => {
     // Toril Public Market coordinates (7°1'6"N, 125°29'44"E)
@@ -1063,46 +1004,6 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         onDeny={handleDenyPermission}
       />
 
-      {/* Entrance Selector Modal */}
-      {showEntranceSelector && (
-        <View style={styles.entranceSelectorOverlay}>
-          <View style={styles.entranceSelectorModal}>
-            <Text style={styles.entranceSelectorTitle}>Set Your Location</Text>
-            <Text style={styles.entranceSelectorSubtitle}>
-              Select which entrance you're at:
-            </Text>
-            
-            {MARKET_ENTRANCES.map((entrance) => (
-              <TouchableOpacity
-                key={entrance.id}
-                style={styles.entranceButton}
-                onPress={() => setManualPosition(entrance)}
-              >
-                <Text style={styles.entranceButtonTitle}>{entrance.name}</Text>
-                <Text style={styles.entranceButtonDesc}>{entrance.description}</Text>
-              </TouchableOpacity>
-            ))}
-            
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowEntranceSelector(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Set My Location Button - floating action button */}
-      {!userMapCoordinate && !highlightedStall && (
-        <TouchableOpacity
-          style={styles.setLocationButton}
-          onPress={handleSetMyLocation}
-        >
-          <Text style={styles.setLocationButtonText}>📍 Set My Location</Text>
-        </TouchableOpacity>
-      )}
-
       {/* Render pathfinding line with gradient effect */}
       {pathCoordinates && pathCoordinates.length > 0 && (
         <Path
@@ -1543,92 +1444,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 20,
-  },
-  setLocationButton: {
-    position: 'absolute',
-    bottom: 20,
-    alignSelf: 'center',
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-    zIndex: 999,
-  },
-  setLocationButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  entranceSelectorOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2000,
-  },
-  entranceSelectorModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    width: '85%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  entranceSelectorTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  entranceSelectorSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  entranceButton: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#2196F3',
-  },
-  entranceButtonTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1976D2',
-    marginBottom: 4,
-  },
-  entranceButtonDesc: {
-    fontSize: 13,
-    color: '#666',
-  },
-  cancelButton: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '600',
   },
 });
 

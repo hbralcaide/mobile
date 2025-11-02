@@ -321,15 +321,10 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                                 {
                                     text: 'Show Map',
                                     onPress: () => {
-                                        // Close the vendor details screen first, then navigate
-                                        navigation.goBack();
-                                        // Use setTimeout to ensure the screen is closed before navigating
-                                        setTimeout(() => {
-                                            navigation.navigate('Market', {
-                                                focusStall: stallNumber,
-                                                stallName: businessName
-                                            });
-                                        }, 100);
+                                        navigation.navigate('Market', {
+                                            focusStall: stallNumber,
+                                            stallName: businessName
+                                        });
                                     }
                                 },
                                 { text: 'Cancel', style: 'cancel' }

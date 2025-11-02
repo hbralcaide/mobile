@@ -128,7 +128,7 @@ const NavigationModal: React.FC<NavigationModalProps> = ({
               onPress={onConfirm}
               activeOpacity={0.8}
             >
-              <Text style={styles.primaryButtonText}>Start Navigation</Text>
+              <Text style={styles.primaryButtonText}>Direction</Text>
               <Text style={styles.primaryButtonIcon}>→</Text>
             </TouchableOpacity>
           </View>
