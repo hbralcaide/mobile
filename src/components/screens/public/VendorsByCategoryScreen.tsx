@@ -499,7 +499,6 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         marginTop: 8,
         color: '#333',
-        elevation: 2,
     },
     header: {
         flexDirection: 'row',
@@ -570,7 +569,6 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         paddingHorizontal: 12,
         paddingVertical: 8,
-        elevation: 2,
     },
     sortToggleText: {
         color: '#333333',
@@ -583,7 +581,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 2,
     },
     sortButtonActive: {
         backgroundColor: '#4CAF50',
@@ -600,14 +597,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 16,
         marginBottom: 12,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
     },
     stallHeader: {
         flexDirection: 'row',

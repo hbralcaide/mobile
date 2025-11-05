@@ -348,32 +348,51 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
             style={styles.profileBtn}
             onPress={() => navigation.navigate('ShopProfile')}
           >
-            <Text style={styles.profileBtnText}>Manage Profile</Text>
+            <Text style={styles.profileBtnText}>Profile</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Product Summary Section styled like screenshot */}
-      <View style={styles.productSummaryHeader}>
-        <Text style={styles.productSummaryTitle}>Product Summary</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('ProductManagement')}>
-          <Text style={styles.manageProductsLink}>Manage Products</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.productSummaryCard}>
-        {products.length === 0 ? (
-          <Text style={styles.noProductsText}>No products found.</Text>
-        ) : (
-          products.map(product => (
-            <View key={product.id} style={[styles.productRow, (product.status === 'unavailable' || product.status === 'inactive') && styles.productRowUnavailable]}>
-              <Text style={styles.productName}>{product.products.name}</Text>
-              <Text style={styles.productPrice}>₱{product.price}/{product.uom || 'kg'}</Text>
-              <View style={[styles.statusBadge, (product.status === 'available' || product.status === 'active') ? styles.statusActive : styles.statusInactive]}>
-                <Text style={styles.statusBadgeText}>{(product.status === 'available' || product.status === 'active') ? 'Available' : 'Unavailable'}</Text>
+      <View style={styles.productSummaryContainer}>
+        <View style={styles.productSummaryHeader}>
+          <Text style={styles.productSummaryTitle}>Product Summary</Text>
+          <TouchableOpacity 
+            style={styles.manageProductsButton}
+            onPress={() => navigation.navigate('ProductManagement')}
+          >
+            <Text style={styles.manageProductsButtonText}>Manage</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.productSummaryCard}>
+          {products.length === 0 ? (
+            <Text style={styles.noProductsText}>No products found.</Text>
+          ) : (
+            products.map((product, index) => (
+              <View key={product.id} style={[
+                styles.productRow, 
+                index === products.length - 1 && styles.productRowLast,
+                (product.status === 'unavailable' || product.status === 'inactive') && styles.productRowUnavailable
+              ]}>
+                <View style={styles.productInfo}>
+                  <Text style={styles.productName}>{product.products.name}</Text>
+                  <Text style={styles.productPrice}>₱{product.price}/{product.uom || 'kg'}</Text>
+                </View>
+                <View style={[
+                  styles.statusBadge, 
+                  (product.status === 'available' || product.status === 'active') ? styles.statusActive : styles.statusInactive
+                ]}>
+                  <Text style={[
+                    styles.statusBadgeText,
+                    (product.status === 'available' || product.status === 'active') ? styles.statusActiveText : styles.statusInactiveText
+                  ]}>
+                    {(product.status === 'available' || product.status === 'active') ? 'Available' : 'Unavailable'}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))
-        )}
+            ))
+          )}
+        </View>
       </View>
 
       {/* Remove Product Summary and table for now, as per screenshot */}
@@ -383,236 +402,272 @@ const VendorDashboardScreen: React.FC<Props> = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   errorText: {
-    color: 'red',
+    color: '#E53935',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  // statusActive and statusInactive already exist above, so remove these duplicates
   scroll: {
     flex: 1,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#F8F9FA',
   },
   scrollContent: {
-    paddingBottom: 32,
+    paddingBottom: 16,
   },
   header: {
     paddingTop: 48,
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    backgroundColor: '#22C55E',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
   },
   greeting: {
-    color: '#fff',
-    fontSize: 16,
+    color: '#6B7280',
+    fontSize: 14,
     fontWeight: '500',
   },
   vendorName: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginLeft: 6,
-    letterSpacing: 0.5,
+    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.3,
   },
   logoutButton: {
     paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#15803D',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: '#333333',
   },
   logoutButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontWeight: '600',
+    fontSize: 13,
     letterSpacing: 0.2,
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    backgroundColor: '#22C55E',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F9FA',
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    paddingHorizontal: 16,
   },
   statCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 10,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    width: 100,
-    elevation: 3,
+    flex: 1,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    marginHorizontal: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   statNum: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#22C55E',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
   },
   statLabel: {
-    fontSize: 13,
-    color: '#333',
+    fontSize: 11,
+    color: '#6B7280',
     marginTop: 4,
     textAlign: 'center',
+    fontWeight: '500',
   },
   shopCardCentered: {
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 16,
+    marginTop: 12,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   shopCard: {
-    backgroundColor: '#F3F3F3',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    elevation: 4,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    width: 320,
-    position: 'relative',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  productSummaryContainer: {
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   productSummaryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#22C55E',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingVertical: 14,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
-    marginHorizontal: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: '#E5E5E5',
   },
   productSummaryTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1F2937',
+    letterSpacing: 0.2,
   },
-  manageProductsLink: {
-    fontSize: 15,
-    color: '#fff',
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
+  manageProductsButton: {
+    backgroundColor: '#333333',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  manageProductsButtonText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   productSummaryCard: {
-    backgroundColor: '#F3F3F3',
+    backgroundColor: '#FFFFFF',
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
-    marginHorizontal: 16,
-    paddingHorizontal: 8,
     paddingVertical: 4,
-    marginBottom: 16,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: '#E5E5E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 1,
   },
   productRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingHorizontal: 8,
+    borderBottomColor: '#F0F0F0',
+  },
+  productRowLast: {
+    borderBottomWidth: 0,
   },
   productRowUnavailable: {
-    backgroundColor: '#f5f5f5',
-    opacity: 0.7,
+    opacity: 0.5,
+  },
+  productInfo: {
+    flex: 1,
+    marginRight: 12,
   },
   productName: {
-    fontSize: 16,
-    color: '#222',
-    flex: 1,
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#1F2937',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   productPrice: {
-    fontSize: 16,
-    color: '#222',
-    width: 80,
-    textAlign: 'right',
+    fontSize: 13,
+    color: '#6B7280',
     fontWeight: '500',
   },
   statusBadge: {
-    borderRadius: 8,
-    paddingVertical: 2,
+    borderRadius: 6,
+    paddingVertical: 4,
     paddingHorizontal: 10,
-    marginLeft: 8,
+    minWidth: 85,
+    alignItems: 'center',
+    borderWidth: 1,
   },
   statusActive: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
   },
   statusInactive: {
-    backgroundColor: '#A3A3A3',
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
   },
   statusBadgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 13,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  statusActiveText: {
+    color: '#059669',
+  },
+  statusInactiveText: {
+    color: '#6B7280',
   },
   noProductsText: {
-    color: '#888',
-    fontSize: 15,
+    color: '#9CA3AF',
+    fontSize: 14,
     textAlign: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
+    fontWeight: '500',
   },
   shopAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#22C55E',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#F5F5F5',
     marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#E5E5E5',
   },
   shopAvatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     marginBottom: 12,
-    borderWidth: 3,
-    borderColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#E5E5E5',
   },
   shopInfo: {
     alignItems: 'center',
     marginBottom: 12,
   },
   shopName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    color: '#222',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+    color: '#1F2937',
     textAlign: 'center',
   },
   shopDetail: {
-    fontSize: 14,
-    color: '#333',
+    fontSize: 13,
+    color: '#6B7280',
     marginBottom: 2,
     textAlign: 'center',
+    fontWeight: '500',
   },
   profileBtn: {
-    backgroundColor: '#22C55E',
-    borderRadius: 8,
+    backgroundColor: '#333333',
+    borderRadius: 6,
     paddingVertical: 8,
-    paddingHorizontal: 18,
-    marginTop: 8,
-    elevation: 2,
+    paddingHorizontal: 16,
+    marginTop: 4,
   },
   profileBtnText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
+    fontWeight: '600',
+    fontSize: 14,
+    letterSpacing: 0.2,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#22C55E',
+    backgroundColor: '#F8F9FA',
   },
 });
 

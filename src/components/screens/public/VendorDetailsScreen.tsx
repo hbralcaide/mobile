@@ -6,19 +6,24 @@ import {
     FlatList,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     SafeAreaView,
     StatusBar,
     TextInput,
     Image,
     ScrollView,
     Platform,
-    Linking,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
+
+function ItemDivider() {
+    return <View style={styles.cardItemDivider} />;
+}
+
+// Compute a safe top inset so the Close pill doesn't get clipped under the status bar
+const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VendorDetails'>;
 
@@ -58,6 +63,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [profileImage, setProfileImage] = useState<string | null>(null);
     const [_currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
+    // No modal; navigate directly to indoor map
 
     
 
@@ -290,119 +296,19 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         if (isFocused) fetchVendorDetails();
     }, [isFocused, fetchVendorDetails]);
 
-    const handleDirections = () => {
-        const stallNumber = vendor?.stall?.stall_number;
-        const businessName = vendor?.business_name;
+    // Directions removed
 
-        if (!stallNumber) {
-            Alert.alert('No Location', 'Stall location not available');
-            return;
-        }
-
-        // Toril Public Market, Toril, Davao City coordinates (7°1'6"N 125°29'44"E)
-        const marketLat = 7.018333;
-        const marketLng = 125.495556;
-        const marketName = 'Toril Public Market, Toril, Davao City';
-        const marketAddress = 'Toril Public Market, McArthur Highway, Toril, Davao City, Davao del Sur';
-
-        Alert.alert(
-            'Get Directions',
-            `Choose navigation type for ${businessName}`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Indoor Map', 
-                    onPress: () => {
-                        // Navigate to indoor map showing the stall location
-                        Alert.alert(
-                            'Indoor Map',
-                            `The map will show you the location of Stall ${stallNumber}. Look for the highlighted stall in purple when you arrive at the market.`,
-                            [
-                                {
-                                    text: 'Show Map',
-                                    onPress: () => {
-                                        // Close the vendor details screen first, then navigate
-                                        navigation.goBack();
-                                        // Use setTimeout to ensure the screen is closed before navigating
-                                        setTimeout(() => {
-                                            navigation.navigate('Market', {
-                                                focusStall: stallNumber,
-                                                stallName: businessName
-                                            });
-                                        }, 100);
-                                    }
-                                },
-                                { text: 'Cancel', style: 'cancel' }
-                            ]
-                        );
-                    }
-                },
-                {
-                    text: 'Outdoor Directions',
-                    onPress: () => {
-                        // Open external maps app with directions to the market
-                        const url = Platform.select({
-                            ios: `maps:?daddr=${marketLat},${marketLng}&q=${encodeURIComponent(marketName)}`,
-                            android: `google.navigation:q=${marketLat},${marketLng}&mode=d`,
-                            default: `https://www.google.com/maps/dir/?api=1&destination=${marketLat},${marketLng}&destination_place_id=${encodeURIComponent(marketName)}`
-                        });
-
-                        Linking.openURL(url).catch(() => {
-                            // Fallback to Google Maps web URL with address search if native app fails
-                            const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(marketAddress)}`;
-                            Linking.openURL(webUrl).catch(() => {
-                                Alert.alert('Error', 'Unable to open maps application');
-                            });
-                        });
-                    }
-                },
-            ]
+    const renderProductItem = ({ item }: { item: VendorProduct }) => {
+        return (
+            <View style={styles.cardItemRow}>
+                <View style={styles.cardItemLeft}>
+                    <Text style={styles.cardItemName}>{item.products.name}</Text>
+                    <Text style={styles.cardItemSub}>₱{item.price}/{item.uom}</Text>
+                </View>
+            </View>
         );
     };
 
-    const getProductEmoji = (p: VendorProduct): string => {
-        const lower = (s?: string) => (s || '').toLowerCase();
-        const name = lower(p.products?.name);
-        const cat = p.products?.product_categories;
-        const catName = Array.isArray(cat) ? lower(cat[0]?.name) : lower((cat as any)?.name);
-
-        // Beef
-        if (
-            catName?.includes('beef') ||
-            name.includes('beef') || name.includes('baka') || name.includes('brisket') || name.includes('sirloin') || name.includes('tenderloin') ||
-            name.includes('ribeye') || name.includes('ribs') || name.includes('short rib') || name.includes('shank') || name.includes('oxtail') || name.includes('kalitiran')
-        ) return '🐄';
-
-        // Pork
-        if (
-            catName?.includes('pork') ||
-            name.includes('pork') || name.includes('baboy') || name.includes('liempo') || name.includes('lomo') || name.includes('pigue') ||
-            name.includes('pata') || name.includes('tadyang') || name.includes('loin') || name.includes('chop') || name.includes('shoulder')
-        ) return '🐖';
-
-        // Chicken
-        if (
-            catName?.includes('chicken') ||
-            name.includes('chicken') || name.includes('manok') || name.includes('drumstick') || name.includes('thigh') || name.includes('wing') || name.includes('breast')
-        ) return '🍗';
-
-        return '🧺';
-    };
-
-    const renderProductItem = ({ item }: { item: VendorProduct }) => (
-        <View style={styles.productRow}>
-            <View style={styles.productImageContainer}>
-                <View style={styles.productImage}>
-                    <Text style={styles.productEmoji}>{getProductEmoji(item)}</Text>
-                </View>
-            </View>
-            <View style={styles.productInfo}>
-                <Text style={styles.productName}>{item.products.name}</Text>
-            </View>
-            <Text style={styles.productPrice}>₱{item.price}</Text>
-            <Text style={styles.productUnit}>{item.uom}</Text>
-        </View>
-    );
 
     const getOperatingHours = () => {
         if (!vendor || !('operating_hours' in vendor) || !vendor.operating_hours) {
@@ -516,39 +422,47 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#aa1515ff" />
+            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                    <Text style={styles.backButtonText}>←</Text>
-                </TouchableOpacity>
-            </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={{ paddingTop: TOP_INSET + 12 }}
+                showsVerticalScrollIndicator={false}
+            >
                 {/* Vendor Profile Section */}
                 <View style={styles.profileSection}>
                     {(() => {
                         const hours = getOperatingHours();
-                        const isOpen = hours.online;
-                        const borderColor = isOpen ? '#4CAF50' : '#E53935';
                         // Dev logging to inspect operating_hours parsing when viewing vendor details
                         try {
                             if (__DEV__) console.warn(`VendorDetailsHours id=${vendor?.id} online=${hours.online} operating_hours=${String((vendor as any)?.operating_hours)}`);
                         } catch (e) { if (__DEV__) console.warn('VendorDetailsHours error', e); }
-                        
                         return (
-                            <View style={[styles.profileImageContainer, { borderColor }]}>
+                            <View style={styles.profileImageContainer}>
                                 {profileImage ? (
                                     <Image source={{ uri: profileImage }} style={styles.profileImage} />
                                 ) : (
                                     <View style={styles.profileImagePlaceholder} />
                                 )}
+                                {/* Open/Closed indicator overlay at lower-right of profile image */}
+                                <View
+                                    style={[
+                                        styles.statusBadgeOverlay,
+                                        hours.online ? styles.statusBadgeOpen : styles.statusBadgeClosed,
+                                    ]}
+                                >
+                                    <Text style={styles.statusBadgeText}>{hours.online ? 'Open' : 'Closed'}</Text>
+                                </View>
                             </View>
                         );
                     })()}
 
                     <Text style={styles.vendorName}>{vendor.business_name}</Text>
+                    {vendor.stall?.stall_number && (
+                        <Text style={styles.stallText}>Stall {vendor.stall.stall_number}</Text>
+                    )}
                     {(vendor.first_name || vendor.last_name) && (
                         <Text style={styles.vendorOwnerName}>
                             {[vendor.first_name, vendor.last_name].filter(Boolean).join(' ')}
@@ -556,27 +470,19 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                     )}
 
                     <View style={styles.vendorDetails}>
-                        {vendor.stall?.stall_number && (
-                            <Text style={styles.detailText}>
-                                🏪 Stall {vendor.stall.stall_number}, {vendor.stall.location_description || 'West Section'}
-                            </Text>
-                        )}
                         {vendor.phone_number && (
                             <Text style={styles.detailText}>📞 Contact No.: {vendor.phone_number}</Text>
                         )}
                         {(() => {
                             const hours = getOperatingHours();
-                            const statusColor = hours.online ? '#22C55E' : '#E53935';
+                            // Show only the hours line; omit separate Open/Closed label
                             try {
                                 if (__DEV__) console.warn(`VendorDetailsHoursInline id=${vendor?.id} online=${hours.online} operating_hours=${String((vendor as any)?.operating_hours)}`);
                             } catch (e) { if (__DEV__) console.warn('VendorDetailsHoursInline error', e); }
                             return (
                                 <View style={styles.operatingHoursContainer}>
                                     <Text style={styles.detailText}>
-                                        ⏰ {hours.dayName}: {hours.text}
-                                    </Text>
-                                    <Text style={[styles.statusText, { color: statusColor }]}>
-                                        {hours.online ? '● Open' : '● Closed'}
+                                        ⏰ {hours.text}
                                     </Text>
                                 </View>
                             );
@@ -593,22 +499,16 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                             placeholder="Search Product"
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholderTextColor="#999"
+                            placeholderTextColor="#999999"
                         />
                     </View>
                 </View>
 
-                {/* Products Header */}
-                <View style={styles.productsHeader}>
-                    {/* Spacer to align with product emoji + row left padding */}
-                    <View style={styles.iconHeaderSpacer} />
-                    <Text style={[styles.columnHeader, styles.nameHeader]}>Product Name</Text>
-                    <Text style={[styles.columnHeader, styles.priceHeader]}>Price</Text>
-                    <Text style={[styles.columnHeader, styles.unitHeader]}>Unit</Text>
-                </View>
-
-                {/* Products List */}
-                <View style={styles.productsContainer}>
+                {/* Products Card */}
+                <View style={styles.productsCard}>
+                    <View style={styles.productsCardHeader}>
+                        <Text style={styles.productsCardTitle}>Product Summary</Text>
+                    </View>
                     {filteredProducts.length === 0 ? (
                         <View style={styles.noProductsContainer}>
                             <Text style={styles.noProductsText}>
@@ -620,17 +520,28 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                             data={filteredProducts}
                             keyExtractor={(item) => item.id}
                             renderItem={renderProductItem}
+                            ItemSeparatorComponent={ItemDivider}
                             scrollEnabled={false}
                             showsVerticalScrollIndicator={false}
                         />
                     )}
                 </View>
             </ScrollView>
-
-            {/* Direction Button */}
-            <View style={styles.bottomContainer}>
-                <TouchableOpacity style={styles.directionButton} onPress={handleDirections}>
-                    <Text style={styles.directionButtonText}>Direction</Text>
+            {/* Directions Button - navigate straight to map */}
+            <View style={styles.bottomBar}>
+                <TouchableOpacity
+                    style={styles.directionButton}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                        if (vendor.stall?.stall_number) {
+                            navigation.navigate('Market', {
+                                focusStall: vendor.stall.stall_number,
+                                stallName: vendor.business_name,
+                            });
+                        }
+                    }}
+                >
+                    <Text style={styles.directionButtonText}>Directions</Text>
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
@@ -640,116 +551,168 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#FFFFFF',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        backgroundColor: '#F5F5F5',
+        justifyContent: 'flex-end',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        marginTop: TOP_INSET + 16,
+        backgroundColor: '#FFFFFF',
+        overflow: 'visible',
     },
-    backButton: {
-        padding: 5,
+    closeButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: '#FFC0CB',
+        borderWidth: 0,
     },
-    backButtonText: {
-        fontSize: 24,
-        color: '#333333',
-        fontWeight: '300',
+    closeButtonText: {
+        fontSize: 14,
+        color: '#111111',
+        fontWeight: '600',
     },
     content: {
         flex: 1,
     },
     profileSection: {
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
     },
     profileImageContainer: {
-        marginBottom: 16,
+        width: 160,
+        height: 160,
+        marginBottom: 12,
+        borderRadius: 80,
+        backgroundColor: '#E5E5E5',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
     },
     profileImage: {
-        width: 140,
-        height: 140,
-        borderRadius: 70,
-        borderWidth: 4,
-        borderColor: '#4CAF50',
+        width: 120,
+        height: 120,
+        borderRadius: 60,
     },
     profileImagePlaceholder: {
-        width: 140,
-        height: 140,
-        backgroundColor: '#E5E5E5',
-        borderRadius: 70,
-        borderWidth: 4,
-        borderColor: '#4CAF50',
+        width: 120,
+        height: 120,
+        backgroundColor: '#D9D9D9',
+        borderRadius: 60,
     },
     vendorName: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#333333',
+        fontSize: 26,
+        fontWeight: '800',
+        color: '#000000',
+        marginTop: 4,
         marginBottom: 4,
         textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    stallText: {
+        fontSize: 14,
+        color: '#9A9A9A',
+        textAlign: 'center',
+        marginBottom: 6,
     },
     vendorOwnerName: {
-        fontSize: 16,
-        color: '#666666',
+        fontSize: 14,
+        color: '#777777',
         marginBottom: 12,
         textAlign: 'center',
         fontStyle: 'italic',
     },
     vendorDetails: {
         alignItems: 'center',
-        gap: 4,
+        gap: 6,
     },
     detailText: {
         fontSize: 14,
-        color: '#666666',
+        color: '#444444',
         textAlign: 'center',
+        lineHeight: 20,
     },
     operatingHoursContainer: {
         marginTop: 8,
+        marginBottom: 8,
         alignItems: 'center',
         gap: 4,
+        paddingHorizontal: 8,
+        alignSelf: 'center',
     },
     statusText: {
         fontSize: 14,
-        fontWeight: 'bold',
+        fontWeight: '600',
         textAlign: 'center',
+        lineHeight: 18,
+        paddingTop: 2,
+    },
+    // Small Open/Closed badge overlayed on the profile image (bottom-right)
+    statusBadgeOverlay: {
+        position: 'absolute',
+        right: 8,
+        bottom: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 999,
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    statusBadgeOpen: {
+        backgroundColor: '#22C55E',
+    },
+    statusBadgeClosed: {
+        backgroundColor: '#DC2626',
+    },
+    statusBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 0.2,
     },
     detailTime: {
         fontSize: 16,
-        color: '#E53935',
+        color: '#111111',
         fontWeight: 'bold',
         textAlign: 'center',
         marginVertical: 2,
     },
     searchContainer: {
-        paddingHorizontal: 20,
-        marginBottom: 20,
+        paddingHorizontal: 16,
+        marginBottom: 16,
     },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#4CAF50',
-        borderRadius: 25,
-        paddingHorizontal: 15,
-        paddingVertical: 10,
+        backgroundColor: '#EFEFEF',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 6,
     },
     searchIcon: {
         fontSize: 16,
-        marginRight: 10,
+        marginRight: 8,
     },
     searchInput: {
         flex: 1,
         fontSize: 16,
-        color: '#FFFFFF',
+        color: '#111111',
         fontWeight: '500',
     },
     productsHeader: {
         flexDirection: 'row',
-        backgroundColor: '#4CAF50',
-        paddingHorizontal: 20,
-        paddingVertical: 12,
+        backgroundColor: '#000000',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
         alignItems: 'center',
     },
     // Width accounts for row's left padding (15) + emoji box (40) + spacing (15) = 70
@@ -758,8 +721,8 @@ const styles = StyleSheet.create({
     },
     columnHeader: {
         color: '#FFFFFF',
-        fontWeight: 'bold',
-        fontSize: 14,
+        fontWeight: '700',
+        fontSize: 13,
         textAlign: 'center',
     },
     nameHeader: {
@@ -773,27 +736,29 @@ const styles = StyleSheet.create({
         width: 50,
     },
     productsContainer: {
-        backgroundColor: '#4CAF50',
-        paddingBottom: 20,
+        backgroundColor: '#FFFFFF',
+        paddingBottom: 16,
     },
     productRow: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#FFFFFF',
-        marginHorizontal: 20,
-        marginVertical: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 15,
-        borderRadius: 6,
+        marginHorizontal: 16,
+        marginVertical: 6,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#F0F0F0',
     },
     productImageContainer: {
-        marginRight: 15,
+        marginRight: 12,
     },
     productImage: {
         width: 40,
         height: 40,
         borderRadius: 6,
-        backgroundColor: '#F0F0F0',
+        backgroundColor: '#F5F5F5',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -805,48 +770,113 @@ const styles = StyleSheet.create({
     },
     productName: {
         fontSize: 14,
-        color: '#333333',
+        color: '#111111',
         fontWeight: '500',
     },
     productPrice: {
         fontSize: 14,
-        color: '#333333',
+        color: '#111111',
         fontWeight: '600',
         textAlign: 'center',
         width: 70,
     },
     productUnit: {
         fontSize: 14,
-        color: '#333333',
+        color: '#111111',
         textAlign: 'center',
         width: 50,
     },
+    // New card-based product list styles
+    productsCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        marginHorizontal: 12,
+        marginTop: 8,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#EAEAEA',
+        shadowColor: '#000',
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    productsCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
+    },
+    productsCardTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#222222',
+    },
+    manageButton: {
+        backgroundColor: '#333333',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    manageButtonText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    cardItemRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+    },
+    cardItemLeft: { flex: 1, paddingRight: 12 },
+    cardItemName: {
+        fontSize: 16,
+        color: '#1F2937',
+        fontWeight: '700',
+        lineHeight: 22,
+    },
+    cardItemSub: {
+        marginTop: 2,
+        fontSize: 13,
+        color: '#6B7280',
+    },
+    cardItemDivider: {
+        height: 1,
+        backgroundColor: '#F0F0F0',
+        marginHorizontal: 12,
+    },
+    badge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    badgeAvailable: {
+        backgroundColor: '#E8F7EE',
+        borderColor: '#34C759',
+    },
+    badgeUnavailable: {
+        backgroundColor: '#F5F5F5',
+        borderColor: '#D1D5DB',
+    },
+    badgeText: { fontSize: 12, fontWeight: '700' },
+    badgeTextAvailable: { color: '#22C55E' },
+    badgeTextUnavailable: { color: '#6B7280' },
     noProductsContainer: {
-        padding: 40,
+        padding: 24,
         alignItems: 'center',
     },
     noProductsText: {
-        fontSize: 16,
-        color: '#FFFFFF',
+        fontSize: 15,
+        color: '#666666',
         textAlign: 'center',
     },
-    bottomContainer: {
-        padding: 20,
-        backgroundColor: '#FFFFFF',
-        borderTopWidth: 1,
-        borderTopColor: '#E5E5E5',
-    },
-    directionButton: {
-        backgroundColor: '#333333',
-        borderRadius: 8,
-        paddingVertical: 15,
-        alignItems: 'center',
-    },
-    directionButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
+    
     centered: {
         flex: 1,
         justifyContent: 'center',
@@ -865,7 +895,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     retryButton: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#000000',
         paddingHorizontal: 20,
         paddingVertical: 10,
         borderRadius: 8,
@@ -874,6 +904,31 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
         fontSize: 16,
+    },
+    bottomBar: {
+        padding: 12,
+        paddingBottom: 16,
+        backgroundColor: '#FFFFFF',
+        borderTopWidth: 1,
+        borderTopColor: '#EFEFEF',
+    },
+    directionButton: {
+        backgroundColor: '#111111',
+        borderRadius: 12,
+        paddingVertical: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    directionButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.2,
     },
 });
 

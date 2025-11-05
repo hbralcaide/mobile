@@ -162,6 +162,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingHorizontal: 10,
   },
+  skipNote: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 10,
+  },
   buttonContainer: {
     gap: 12,
   },

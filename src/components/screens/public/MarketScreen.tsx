@@ -19,10 +19,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import MapViewComponent from '../../map/MapView';
 import { supabase } from '../../../services/supabase';
-import { useShoppingList } from '../../../context/ShoppingListContext';
-import NavigationModal from '../../modals/NavigationModal';
-import StallListModal from '../../modals/StallListModal';
-import AddedToStopsModal from '../../modals/AddedToStopsModal';
+// Navigation modal removed
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Market'>;
 
@@ -119,7 +116,7 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [loadingMainCategories, setLoadingMainCategories] = useState(false);
   const [stallsInCategory, setStallsInCategory] = useState<any[]>([]);
   const [loadingStalls, setLoadingStalls] = useState(false);
-  const [showStallList, setShowStallList] = useState(false);
+  // Removed Market List modal state
   const [focusStall, setFocusStall] = useState<string | undefined>(route.params?.focusStall);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -130,23 +127,11 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [productSearchResults, setProductSearchResults] = useState<any[]>([]);
   const [sortBy, setSortBy] = useState<'alphabetical' | 'price' | 'distance' | 'status'>('alphabetical');
   
-  // Direction modal states
-  const [showDirectionModal, setShowDirectionModal] = useState(false);
-  const [selectedVendor, setSelectedVendor] = useState<any>(null);
+  // Direction modal removed
 
-  // Added to Stops modal states
-  const [showAddedToStopsModal, setShowAddedToStopsModal] = useState(false);
-  const [addedToStopsTitle, setAddedToStopsTitle] = useState('');
-  const [addedToStopsMessage, setAddedToStopsMessage] = useState('');
+  // Removed My Stops modal state and shopping list context
 
-  // Shopping list context
-  const { addItem } = useShoppingList();
-
-  // Debug modal state changes
-  useEffect(() => {
-    console.log('Direction modal state changed:', showDirectionModal);
-    console.log('Selected vendor:', selectedVendor?.business_name || 'None');
-  }, [showDirectionModal, selectedVendor]);
+  // Removed debug for direction modal
 
   // PanRespononder for draggable bottom sheet - only on drag handle
   const panResponder = useRef(
@@ -204,23 +189,15 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   // Handle focusing on a specific stall when navigating from VendorDetails
   useEffect(() => {
     if (route.params?.focusStall) {
-      const stallNumber = route.params.focusStall;
-      const stallName = route.params.stallName;
+  const stallNumber = route.params.focusStall;
       
       console.log('Focusing on stall:', stallNumber);
-      
-      // Show an alert confirming the stall
-      Alert.alert(
-        'Stall Location',
-        `Showing ${stallName || 'Vendor'} at Stall ${stallNumber}`,
-        [{ text: 'OK' }]
-      );
       
       // Set the focus stall for the map to zoom to
       setFocusStall(stallNumber);
       
-      // Clear the params after handling
-      navigation.setParams({ focusStall: undefined, stallName: undefined });
+  // Clear the params after handling
+  navigation.setParams({ focusStall: undefined, stallName: undefined });
     }
   }, [route.params, navigation]);
 
@@ -854,49 +831,6 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
       if (__DEV__) console.log('VendorHoursCheck error', e);
     }
 
-    const handleAddToStops = () => {
-      const vendorName = vendor.business_name || `${vendor.first_name} ${vendor.last_name}`;
-      
-      // Check if we're in product search mode
-      if (searchMode === 'product' && vendor.productName && vendor.minPrice) {
-        // Add the specific product with its price
-        addItem({
-          productName: vendor.productName,
-          productId: `product-${vendor.id}-${Date.now()}`,
-          vendorName: vendorName,
-          vendorId: vendor.id,
-          stallNumber: vendor.stall_number,
-          price: vendor.minPrice,
-          uom: '',
-          categoryName: vendor.category || selectedCategory || '',
-          categoryId: selectedCategoryId || '',
-        });
-        
-        // Show success confirmation with product details
-        setAddedToStopsTitle('✓ Added to My Stops');
-        setAddedToStopsMessage(`${vendor.productName} - ₱${vendor.minPrice.toFixed(2)}\nFrom ${vendorName} (Stall ${vendor.stall_number})`);
-        setShowAddedToStopsModal(true);
-      } else {
-        // Add a placeholder item to shopping list representing this vendor/stall
-        addItem({
-          productName: vendorName,
-          productId: `stall-${vendor.stall_number}`,
-          vendorName: vendorName,
-          vendorId: vendor.id,
-          stallNumber: vendor.stall_number,
-          price: 0,
-          uom: '',
-          categoryName: vendor.category || selectedCategory || '',
-          categoryId: '',
-        });
-        
-        // Show success confirmation
-        setAddedToStopsTitle('✓ Added to My Stops');
-        setAddedToStopsMessage(`${vendorName} (Stall ${vendor.stall_number}) has been added to your stops list.`);
-        setShowAddedToStopsModal(true);
-      }
-    };
-
     return (
       <View style={styles.vendorCardContainer}>
         <TouchableOpacity
@@ -904,16 +838,11 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
           activeOpacity={0.7}
           onPress={() => {
             console.log('Vendor card clicked:', vendor.business_name, vendor.stall_number);
-            // Set focus to the vendor's stall to show pathfinding
-            if (vendor.stall_number) {
-              console.log('Opening direction modal for stall:', vendor.stall_number);
-              setFocusStall(vendor.stall_number);
-              setSelectedVendor(vendor);
-              setShowDirectionModal(true);
-            } else {
-              console.log('No stall number available');
-              Alert.alert('No Location', 'Stall location not available');
-            }
+            // Navigate directly to vendor details
+            navigation.navigate('VendorDetails', {
+              vendorId: vendor.id,
+              vendorName: vendor.business_name || `${vendor.first_name} ${vendor.last_name}`,
+            });
           }}
         >
           {vendor.profile_image_url ? (
@@ -952,51 +881,15 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
               </Text>
             )}
           </View>
-          <View style={styles.vendorStatus}>
-            <Text style={styles.vendorStatusDot}>●</Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.addToStopsButton}
-          onPress={handleAddToStops}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.addToStopsIcon}>+</Text>
         </TouchableOpacity>
       </View>
     );
-  }, [isVendorOpen, searchMode, addItem, selectedCategory, selectedCategoryId]);
+  }, [isVendorOpen, searchMode, navigation]);
 
   const handleLocationSelect = (locationId: string, locationName: string, locationData?: any) => {
     console.log('Location selected:', { locationId, locationName, locationData });
     setSelectedLocation({ id: locationId, name: locationName, data: locationData });
-    
-    // Show location details alert
-    Alert.alert(
-      locationName,
-      'What would you like to do?',
-      [
-        {
-          text: 'View Details',
-          onPress: () => {
-            // TODO: Navigate to location/vendor details
-            console.log('View details for:', locationId);
-          }
-        },
-        {
-          text: 'Get Directions',
-          onPress: () => {
-            // TODO: Show directions to this location
-            console.log('Get directions to:', locationId);
-          }
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => setSelectedLocation(null)
-        }
-      ]
-    );
+    // No stall/location alert; keep silent selection (banner still appears below)
   };
 
   return (
@@ -1105,35 +998,31 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
         )}
       </View>
 
-      {/* Bottom Sheet Overlay */}
-      <Animated.View
-        style={[
-          styles.greenBanner,
-          {
-            transform: [{ translateY: translateY }],
-            backgroundColor: selectedCategoryColor,
-          }
-        ]}
-      >
-        {/* Drag Handle */}
-        <View
-          style={styles.dragHandleContainer}
-          {...panResponder.panHandlers}
+      {/* Bottom Sheet Overlay (hidden unless needed) */}
+      {(selectedCategory || (searchResults.length > 0)) && (
+        <Animated.View
+          style={[
+            styles.greenBanner,
+            {
+              transform: [{ translateY: translateY }],
+              backgroundColor: selectedCategoryColor,
+            }
+          ]}
         >
-          <View style={styles.dragHandle} />
-        </View>
+          {/* Drag Handle */}
+          <View
+            style={styles.dragHandleContainer}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.dragHandle} />
+          </View>
 
-        {/* Welcome Message or Category Header */}
-        {!selectedCategory ? (
-          <View style={styles.welcomeSection}>
-            <Text style={styles.welcomeTitle}>Welcome to</Text>
-            <Text style={styles.welcomeSubtitle}>Toril Public Market</Text>
-          </View>
-        ) : (
-          <View style={styles.categoryHeader}>
-            <Text style={styles.categoryHeaderText}>{selectedCategory}</Text>
-          </View>
-        )}
+          {/* Category Header (no welcome sheet) */}
+          {selectedCategory && (
+            <View style={styles.categoryHeader}>
+              <Text style={styles.categoryHeaderText}>{selectedCategory}</Text>
+            </View>
+          )}
 
         {/* Search Results */}
         {searchResults.length > 0 && !selectedCategory && (
@@ -1177,9 +1066,9 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
           </View>
         )}
 
-        {/* Vendor List or Category Buttons */}
-        {selectedCategory ? (
-          <View style={styles.vendorListContainer}>
+          {/* Vendor List or Category Buttons */}
+          {selectedCategory ? (
+            <View style={styles.vendorListContainer}>
             {/* Filter Options */}
             <View style={[styles.bottomSheetFilterContainer, styles.bottomSheetFilterContainerWhiteBorder]}>
               <Text style={[styles.bottomSheetFilterLabel, styles.bottomSheetFilterLabelWhite]}>Sort by:</Text>
@@ -1258,73 +1147,38 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
               </ScrollView>
             </View>
 
-            {/* Vendor List */}
-            {loadingStalls ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4CAF50" />
-              </View>
-            ) : stallsInCategory.length > 0 ? (
-              <FlatList
-                data={stallsInCategory}
-                keyExtractor={(item) => item.id}
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                removeClippedSubviews={true}
-                contentContainerStyle={styles.vendorListContent}
-                showsVerticalScrollIndicator={false}
-                renderItem={renderVendorCard}
-              />
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No vendors found in this category</Text>
-              </View>
-            )}
-          </View>
-        ) : null}
-      </Animated.View>
+              {/* Vendor List */}
+              {loadingStalls ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                </View>
+              ) : stallsInCategory.length > 0 ? (
+                <FlatList
+                  data={stallsInCategory}
+                  keyExtractor={(item) => item.id}
+                  initialNumToRender={10}
+                  maxToRenderPerBatch={10}
+                  windowSize={5}
+                  removeClippedSubviews={true}
+                  contentContainerStyle={styles.vendorListContent}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={renderVendorCard}
+                />
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No vendors found in this category</Text>
+                </View>
+              )}
+            </View>
+          ) : null}
+        </Animated.View>
+      )}
 
-      {/* Stall List Modal */}
-      <StallListModal
-        visible={showStallList}
-        categoryName={selectedCategory}
-        stalls={stallsInCategory}
-        loading={loadingStalls}
-        onClose={() => {
-          setShowStallList(false);
-          setSelectedCategory(null);
-        }}
-        onStallPress={handleStallClick}
-      />
+      {/* Market List removed */}
 
-      {/* Custom Direction Modal */}
-      <NavigationModal
-        visible={showDirectionModal}
-        vendor={selectedVendor}
-        onClose={() => setShowDirectionModal(false)}
-        onViewDetails={() => {
-          setShowDirectionModal(false);
-          if (selectedVendor) {
-            navigation.navigate('VendorDetails', {
-              vendorId: selectedVendor.id,
-              vendorName: selectedVendor.business_name || `${selectedVendor.first_name} ${selectedVendor.last_name}`,
-            });
-          }
-        }}
-        onConfirm={() => {
-          setShowDirectionModal(false);
-          // Hide the bottom sheet to show the map and direction
-          hideBanner();
-        }}
-      />
+      {/* Directions modal removed */}
 
-      {/* Added to Stops Modal */}
-      <AddedToStopsModal
-        visible={showAddedToStopsModal}
-        title={addedToStopsTitle}
-        message={addedToStopsMessage}
-        onClose={() => setShowAddedToStopsModal(false)}
-      />
+      {/* My Stops removed */}
 
     </SafeAreaView>
   );
@@ -1630,14 +1484,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
     minHeight: 95,
   },
   addToStopsButton: {

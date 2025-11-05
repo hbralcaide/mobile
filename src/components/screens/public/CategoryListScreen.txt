@@ -1,3 +1,6 @@
+// Backup of CategoryListScreen.tsx preserved as plain text before deletion.
+// Date: 2025-11-06
+
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';

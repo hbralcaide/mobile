@@ -1,9 +1,7 @@
 export type RootStackParamList = {
   // Public Routes
   Home: undefined;
-  ShoppingList: undefined;
-  Market: { focusStall?: string; stallName?: string; shoppingListStalls?: string[] } | undefined;
-  CategoryList: undefined;
+  Market: { focusStall?: string; stallName?: string } | undefined;
   ProductList: { categoryId: string };
   ProductDetails: { productId: string };
   VendorsByCategory: { category: string };
@@ -11,22 +9,10 @@ export type RootStackParamList = {
 
   // Auth Routes
   Login: undefined;
-  Register: undefined;
-  VerifyEmail: {
-    token: string;
-    type: string;
-  };
-  ResetPassword: {
-    token: string;
-  };
 
   // Vendor Routes
   VendorDashboard: undefined;
   ProductManagement: undefined;
   ShopProfile: undefined;
 };
-
-export type MainTabParamList = {
-  Explore: { focusStall?: string; stallName?: string; shoppingListStalls?: string[] } | undefined;
-  MyStops: undefined;
-};
+// Bottom tabs removed

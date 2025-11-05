@@ -10,25 +10,10 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
   ],
   config: {
     screens: {
-      VerifyEmail: {
-        path: 'auth/callback/verify',
-        parse: {
-          token_hash: (token: string) => token,
-          type: (type: string) => type,
-          refresh_token: (token: string) => token,
-        },
-      },
-      ResetPassword: {
-        path: 'auth/v1/callback',
-        parse: {
-          token: (token: string) => token,
-        },
-      },
       // Add other screen configs here
       Home: 'home',
       Market: 'market',
       Login: 'login',
-      Register: 'register',
     },
   },
   // Custom getStateFromPath to ensure query params are parsed

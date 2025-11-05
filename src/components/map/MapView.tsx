@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapView as MappedInMapView, useMap, Marker, Path } from '@mappedin/react-native-sdk';
 import Geolocation from '@react-native-community/geolocation';
@@ -37,67 +37,95 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
   const [categoryVendors, setCategoryVendors] = useState<Array<{ stallNumber: string; vendorName: string; poi_id: string }>>([]);
   const [userMapCoordinate, setUserMapCoordinate] = useState<any>(null);
   const hasInitiallyFocusedRef = useRef(false); // Track if we've focused on user location initially
-  const [showEntranceSelector, setShowEntranceSelector] = useState(false);
-  const [_manualPositionMode, setManualPositionMode] = useState(false); // Track if using manual position
+  // Entrance selector and manual position feature removed
 
   // Debug modal state removed - now using navigation instead
 
   // Market entrance positions (approximate coordinates based on map layout)
   const MARKET_ENTRANCES = useMemo(() => [
-    { id: 'main', name: 'Main Entrance (North)', lat: 7.018556, lng: 125.495556, description: 'McArthur Highway side' },
-    { id: 'south', name: 'South Entrance', lat: 7.018111, lng: 125.495556, description: 'Parking area side' },
-    { id: 'east', name: 'East Gate', lat: 7.018333, lng: 125.495833, description: 'Near jeepney terminal' },
-    { id: 'west', name: 'West Gate', lat: 7.018333, lng: 125.495278, description: 'Residential side' },
+    { id: 'e1', name: 'Entrance/Exit 1', lat: 7.01845179, lng: 125.49598357, description: 'User-provided' },
+    { id: 'e2', name: 'Entrance/Exit 2', lat: 7.01810893, lng: 125.49607863, description: 'User-provided' },
+    { id: 'e3', name: 'Entrance/Exit 3', lat: 7.01804035, lng: 125.49591554, description: 'User-provided' },
+    { id: 'e4', name: 'Entrance/Exit 4', lat: 7.01802759, lng: 125.49581658, description: 'User-provided' },
+    { id: 'e5', name: 'Entrance/Exit 5', lat: 7.01836498, lng: 125.49572210, description: 'User-provided' },
+    { id: 'e6', name: 'Entrance/Exit 6', lat: 7.01878521, lng: 125.49560490, description: 'User-provided' },
+    { id: 'e7', name: 'Entrance/Exit 7', lat: 7.01881347, lng: 125.49568865, description: 'User-provided' },
+    { id: 'e8', name: 'Entrance/Exit 8', lat: 7.01884416, lng: 125.49579819, description: 'User-provided' },
+    { id: 'e9', name: 'Entrance/Exit 9', lat: 7.01884789, lng: 125.49587464, description: 'User-provided' },
   ], []);
 
-  // Function to manually set user position at an entrance
-  const setManualPosition = useCallback(async (entrance: typeof MARKET_ENTRANCES[0]) => {
-    if (!mapView || !mapData) return;
+  // Helper: choose the best fallback start (prefer nearest provided entrances; then try doors)
+  const getBestFallbackStart = useCallback(async (targetSpace: any) => {
+    if (!mapView || !mapData || !targetSpace) return null;
 
+    // 1) Prefer entrances provided by the user. Build a coordinate for each and pick the shortest route
     try {
       const floors = mapData.getByType('floor');
       if (floors && floors.length > 0) {
-        const currentFloor = floors[0];
-        
-        // Create coordinate from entrance position
-        const coordinate = await mapView.createCoordinate({
-          latitude: entrance.lat,
-          longitude: entrance.lng,
-          floorId: currentFloor.id,
-        });
-        
-        console.log(`📍 Manual position set at: ${entrance.name}`);
-        setUserMapCoordinate(coordinate);
-        setManualPositionMode(true);
-        setShowEntranceSelector(false);
-        
-        // Set the GPS location state as well for compatibility
-        setUserLocation({
-          latitude: entrance.lat,
-          longitude: entrance.lng,
-        });
-        
-        // Focus camera on the manual position
-        if (!highlightedStall) {
-          mapView.Camera.focusOn(coordinate);
-        }
-        
-        Alert.alert(
-          'Position Set',
-          `Your location has been set to ${entrance.name}. The blue dot shows your position, and you can now navigate to any stall.`,
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error setting manual position:', error);
-      Alert.alert('Error', 'Could not set your position. Please try again.');
-    }
-  }, [mapView, mapData, highlightedStall]);
+        // Try to use the same floor as the target space when possible
+        const targetFloorId = (targetSpace as any)?.floorId || (targetSpace as any)?.floor?.id || floors[0].id;
 
-  // Show entrance selector
-  const handleSetMyLocation = useCallback(() => {
-    setShowEntranceSelector(true);
-  }, []);
+        let bestCoord: any = null;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (const entrance of MARKET_ENTRANCES) {
+          try {
+            const coord = await mapView.createCoordinate({
+              latitude: entrance.lat,
+              longitude: entrance.lng,
+              floorId: targetFloorId,
+            });
+            const dir = await mapView.getDirections(coord, targetSpace);
+            const dist = (dir && typeof dir.distance === 'number') ? dir.distance : Number.POSITIVE_INFINITY;
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestCoord = coord;
+            }
+          } catch {}
+        }
+        if (bestCoord) return bestCoord;
+      }
+    } catch {}
+
+    // 2) Fall back to doors (type or name-matched), choose closest by distance with heuristics
+    try {
+      const typedDoors = (() => { try { return mapData.getByType('door'); } catch { return []; } })() as any[];
+      const namedDoorObjects = (() => { try { return mapData.getByType('object'); } catch { return []; } })()
+        .filter((obj: any) => obj && obj.name && /door|entrance/i.test(obj.name)) as any[];
+
+      const seen = new Set<string>();
+      const doorCandidates: any[] = [];
+      [...typedDoors, ...namedDoorObjects].forEach((d: any) => {
+        const id = (d && (d.id ?? d.externalId)) || Math.random().toString(36);
+        if (!seen.has(id)) { seen.add(id); doorCandidates.push(d); }
+      });
+
+      if (doorCandidates.length > 0) {
+        let bestDoor: any = null;
+        let bestScoreTuple: [number, number] | null = null; // [-priority, distance]
+        for (const door of doorCandidates) {
+          try {
+            const name = String((door as any).name || '').toLowerCase();
+            let priority = 0;
+            if (/double/.test(name)) priority += 1000;
+            if (/swing/.test(name)) priority += 500;
+            if (/entrance/.test(name)) priority += 300;
+            if (/main/.test(name)) priority += 100;
+            const dir = await mapView.getDirections(door, targetSpace);
+            const dist = (dir && typeof dir.distance === 'number') ? dir.distance : Number.POSITIVE_INFINITY;
+            const scoreTuple: [number, number] = [-priority, dist];
+            if (!bestScoreTuple || scoreTuple[0] < bestScoreTuple[0] || (scoreTuple[0] === bestScoreTuple[0] && scoreTuple[1] < bestScoreTuple[1])) {
+              bestScoreTuple = scoreTuple; bestDoor = door;
+            }
+          } catch {}
+        }
+        if (bestDoor) return bestDoor;
+      }
+    } catch {}
+
+    return null;
+  }, [mapView, mapData, MARKET_ENTRANCES]);
+
+  // Manual 'Set My Location' feature removed
 
   const startLocationTracking = React.useCallback(() => {
     // Toril Public Market coordinates (7°1'6"N, 125°29'44"E)
@@ -177,14 +205,22 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     // Watch position for continuous updates with high accuracy
     const watchId = Geolocation.watchPosition(
       (position) => {
-        console.log('📍 Location updated:', position.coords.latitude, position.coords.longitude);
-        console.log('📍 Accuracy:', position.coords.accuracy, 'meters');
-        setUserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        if (gpsStatus !== 'found') {
-          setGpsStatus('found');
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const acc = position.coords.accuracy;
+        console.log('📍 Location updated:', lat, lng);
+        console.log('📍 Accuracy:', acc, 'meters');
+
+        // Validate location before accepting it (avoid stale/far coordinates)
+        if (validateLocation(lat, lng)) {
+          setUserLocation({ latitude: lat, longitude: lng });
+          if (gpsStatus !== 'found') {
+            setGpsStatus('found');
+          }
+        } else {
+          console.log('⚠️ GPS update outside market bounds or stale; ignoring and clearing user location');
+          setUserLocation(null);
+          if (gpsStatus !== null) setGpsStatus(null);
         }
       },
       (error) => {
@@ -384,11 +420,12 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
                 });
                 
                 setPreviousHighlightedSpace(clickedSpace);
-                
-                // Zoom to show full path
-                const floors = mapData.getByType('floor');
-                if (floors.length > 0) {
-                  mapView.Camera.focusOn(floors[0]);
+
+                // Fit camera to show both the start and the destination
+                try {
+                  mapView.Camera.focusOn([startingPoint, clickedSpace]);
+                } catch (e) {
+                  try { mapView.Camera.focusOn(clickedSpace); } catch {}
                 }
               } else {
                 console.log('⚠️ No path found');
@@ -896,20 +933,15 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
               console.log('⚠️ No blue dot available for focusStall, using door entrance');
             }
             
-            // Fallback: If no user location, use a door as entrance
+            // Fallback: If no user location, pick best door/entrance by route distance
             if (!startingPoint) {
-              const doors = mapData.getByType('door');
-              console.log('No user location, using door. Total doors:', doors.length);
-              
-              if (doors.length > 0) {
-                console.log('Door names:', doors.map((d: any) => d.name || d.id));
-                startingPoint = doors[0];
-                console.log('Using door as starting point:', (startingPoint as any).name || startingPoint.id);
-              } else {
-                console.log('No doors found - cannot show path');
+              const fallback = await getBestFallbackStart(targetSpace);
+              if (!fallback) {
+                console.log('No suitable starting point found - cannot show path');
                 setPathCoordinates(null);
                 return;
               }
+              startingPoint = fallback;
             }
 
             if (startingPoint) {
@@ -920,28 +952,19 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
                 // Store the path coordinates for rendering
                 setPathCoordinates(directions.coordinates);
                 
-                // Zoom out camera to show the entire path from start to destination
+                // Fit camera to show both start and destination so the blue path is readable
                 try {
-                  // Focus on the entire floor to show the complete navigation path
-                  const floors = mapData.getByType('floor');
-                  if (floors.length > 0) {
-                    // This will zoom out to show the whole market floor with the path visible
-                    mapView.Camera.focusOn(floors[0]);
-                  } else {
-                    // Fallback to destination if no floor found
-                    mapView.Camera.focusOn(targetSpace);
-                  }
-                } catch (error) {
-                  mapView.Camera.focusOn(targetSpace);
+                  mapView.Camera.focusOn([startingPoint, targetSpace]);
+                } catch (e) {
+                  try { mapView.Camera.focusOn(targetSpace); } catch {}
                 }
               } else {
-                // If GPS coordinate failed to route, fall back to door
+                // If GPS coordinate failed to route, fall back to best door/entrance coordinate
                 const isGPSCoordinate = (startingPoint as any).__type === 'coordinate';
                 if (isGPSCoordinate) {
-                  const doors = mapData.getByType('door');
-                  if (doors.length > 0) {
-                    const doorDirections = await mapView.getDirections(doors[0], targetSpace);
-                    
+                  const fallbackStart = await getBestFallbackStart(targetSpace);
+                  if (fallbackStart) {
+                    const doorDirections = await mapView.getDirections(fallbackStart, targetSpace);
                     if (doorDirections && doorDirections.coordinates && doorDirections.coordinates.length > 0) {
                       setPathCoordinates(doorDirections.coordinates);
                     } else {
@@ -969,7 +992,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
     } else {
       console.log('Stall not found in labels:', focusStall);
     }
-  }, [mapData, mapView, focusStall, stallLabels, userMapCoordinate, previousHighlightedSpace]);
+  }, [mapData, mapView, focusStall, stallLabels, userMapCoordinate, previousHighlightedSpace, getBestFallbackStart]);
 
   // Automatically recalculate path when GPS location changes (blue dot moves)
   React.useEffect(() => {
@@ -1063,54 +1086,16 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         onDeny={handleDenyPermission}
       />
 
-      {/* Entrance Selector Modal */}
-      {showEntranceSelector && (
-        <View style={styles.entranceSelectorOverlay}>
-          <View style={styles.entranceSelectorModal}>
-            <Text style={styles.entranceSelectorTitle}>Set Your Location</Text>
-            <Text style={styles.entranceSelectorSubtitle}>
-              Select which entrance you're at:
-            </Text>
-            
-            {MARKET_ENTRANCES.map((entrance) => (
-              <TouchableOpacity
-                key={entrance.id}
-                style={styles.entranceButton}
-                onPress={() => setManualPosition(entrance)}
-              >
-                <Text style={styles.entranceButtonTitle}>{entrance.name}</Text>
-                <Text style={styles.entranceButtonDesc}>{entrance.description}</Text>
-              </TouchableOpacity>
-            ))}
-            
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowEntranceSelector(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* Manual 'Set My Location' UI removed */}
 
-      {/* Set My Location Button - floating action button */}
-      {!userMapCoordinate && !highlightedStall && (
-        <TouchableOpacity
-          style={styles.setLocationButton}
-          onPress={handleSetMyLocation}
-        >
-          <Text style={styles.setLocationButtonText}>📍 Set My Location</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Render pathfinding line with gradient effect */}
+      {/* Render pathfinding line (blue navigation path) */}
       {pathCoordinates && pathCoordinates.length > 0 && (
         <Path
           key={`path-${highlightedStall}`}
           coordinate={pathCoordinates}
           options={{
-            color: '#667eea', // Purple-blue to match focused stall
-            width: 1.5,
+            color: '#2196F3', // Blue line for navigation
+            width: 1.1,
             pulseIterations: 3,
             displayArrowsOnPath: true,
             animateArrowsOnPath: true,

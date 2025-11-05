@@ -1,12 +1,10 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { PaperProvider } from 'react-native-paper';
 import { RootStackParamList } from './src/navigation/types';
 import { linkingConfig } from './src/navigation/linking';
-import { ShoppingListProvider } from './src/context/ShoppingListContext';
-import { Text } from 'react-native';
+import { } from 'react-native';
 import './src/i18n';
 
 // ============ PUBLIC SCREENS ============
@@ -25,7 +23,6 @@ import HomeScreen from './src/components/screens/public/HomeScreen';
  * - View optimized route to visit selected stalls
  * - Mark items as done while shopping
  */
-import ShoppingListScreen from './src/components/screens/public/ShoppingListScreen';
 
 /**
  * MarketScreen: Overview of the Toril Public Market
@@ -41,7 +38,6 @@ import MarketScreen from './src/components/screens/public/MarketScreen';
  * - Shows category icons and descriptions
  * - Allows filtering and searching categories
  */
-import CategoryListScreen from './src/components/screens/public/CategoryListScreen';
 
 /**
  * ProductListScreen: Displays products within a category
@@ -87,24 +83,6 @@ import VendorDetailsScreen from './src/components/screens/public/VendorDetailsSc
  */
 import LoginScreen from './src/components/screens/auth/LoginScreen';
 
-/**
- * RegisterScreen: New user registration
- * - Handles new vendor and customer registration
- * - Collects necessary user information
- * - Validates user inputs
- * - Initiates email verification process
- */
-import RegisterScreen from './src/components/screens/auth/RegisterScreen';
-
-/**
- * VerifyEmailScreen: Email verification process
- * - Handles email verification flow
- * - Shows verification status
- * - Provides resend verification option
- * - Guides users through verification steps
- */
-import VerifyEmailScreen from './src/components/screens/auth/VerifyEmailScreen';
-
 // ============ VENDOR SCREENS ============
 /**
  * VendorDashboardScreen: Vendor's main control panel
@@ -139,69 +117,14 @@ import ShopProfileScreen from './src/components/screens/vendor/ShopProfileScreen
  * Handles route parameters and screen transitions
  */
 const Stack = createNativeStackNavigator<RootStackParamList>();
-// @ts-ignore - Using untyped tab navigator for flexibility
-const Tab = createBottomTabNavigator();
 
-const iconStyle = { fontSize: 24 };
-
-// Tab icons
-const ExploreIcon = () => <Text style={iconStyle}>🗺️</Text>;
-const MyStopsIcon = () => <Text style={iconStyle}>📍</Text>;
+// icons removed with bottom tabs
 
 /**
  * Bottom Tab Navigator for main app sections
  * Contains Explore (Map) and My Stops (Shopping List)
  */
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: '#2C2C2C',
-        tabBarInactiveTintColor: '#999',
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 0,
-          height: 65,
-          paddingBottom: 10,
-          paddingTop: 8,
-          shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: -2,
-          },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          letterSpacing: 0.3,
-        },
-        headerShown: false,
-      }}
-    >
-      {/* @ts-ignore - Tab navigator handles navigation props */}
-      <Tab.Screen
-        name="MarketTab"
-        component={MarketScreen}
-        options={{
-          tabBarLabel: 'Explore',
-          tabBarIcon: ExploreIcon,
-        }}
-      />
-      {/* @ts-ignore - Tab navigator handles navigation props */}
-      <Tab.Screen
-        name="ShoppingListTab"
-        component={ShoppingListScreen}
-        options={{
-          tabBarLabel: 'My Stops',
-          tabBarIcon: MyStopsIcon,
-        }}
-      />
-    </Tab.Navigator>
-  );
-}
+// Bottom tabs removed (Explore/My Stops)
 
 /**
  * Main App Component
@@ -212,7 +135,6 @@ function MainTabs() {
  */
 function App(): React.ReactElement {
   return (
-    <ShoppingListProvider>
       <PaperProvider>
         <NavigationContainer linking={linkingConfig}>
           <Stack.Navigator initialRouteName="Home">
@@ -223,22 +145,16 @@ function App(): React.ReactElement {
             <Stack.Screen
               name="Home"
               component={HomeScreen}
-              options={{ headerTitle: '', title: '' }}
-            />
-            <Stack.Screen
-              name="ShoppingList"
-              component={ShoppingListScreen}
               options={{ headerShown: false }}
             />
             <Stack.Screen
               name="Market"
-              component={MainTabs}
+              component={MarketScreen}
               options={{ 
                 headerShown: false,
               }}
             />
           {/* Category browsing and product discovery flow */}
-          <Stack.Screen name="CategoryList" component={CategoryListScreen} />
           <Stack.Screen name="ProductList" component={ProductListScreen} />
           <Stack.Screen name="ProductDetails" component={ProductDetailsScreen} />
           {/* Market navigation and vendor discovery */}
@@ -258,16 +174,7 @@ function App(): React.ReactElement {
            * Includes login, registration, and email verification
            * Controls access to protected vendor features
            */}
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen
-            name="VerifyEmail"
-            component={VerifyEmailScreen}
-            options={{
-              headerShown: false,
-              gestureEnabled: false // Prevents back gesture during verification
-            }}
-          />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
 
           {/* ====== Vendor Routes ======
            * Protected routes for authenticated vendors
@@ -286,8 +193,7 @@ function App(): React.ReactElement {
             name="ProductManagement"
             component={ProductManagementScreen}
             options={{
-              headerTitle: 'Product Management',
-              headerTitleAlign: 'center',
+              headerShown: false,
             }}
           />
           <Stack.Screen 
@@ -301,7 +207,6 @@ function App(): React.ReactElement {
         </Stack.Navigator>
       </NavigationContainer>
     </PaperProvider>
-    </ShoppingListProvider>
   );
 }
 

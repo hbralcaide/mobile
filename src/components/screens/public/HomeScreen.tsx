@@ -4,7 +4,7 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -36,7 +36,8 @@ const CustomerHome: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       {/* Main Content */}
       <View style={styles.content}>
         {/* Welcome Heading */}
@@ -60,7 +61,7 @@ const CustomerHome: React.FC = () => {
       <TouchableOpacity style={styles.vendorLink} onPress={handleVendorPress}>
         <Text style={styles.vendorText}>Vendor?</Text>
       </TouchableOpacity>
-    </SafeAreaView>
+    </View>
   );
 };
 

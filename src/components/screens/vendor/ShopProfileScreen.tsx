@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, TextInput, Image,
-  Alert, Platform, PermissionsAndroid, Switch, Modal, NativeSyntheticEvent, NativeScrollEvent, Animated
+  Alert, Platform, PermissionsAndroid, Switch, Modal, NativeSyntheticEvent, NativeScrollEvent, Animated, StatusBar
 } from 'react-native';
 import { Buffer } from 'buffer';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,8 +11,6 @@ import RNFS from 'react-native-fs';
 import { SessionManager } from '../../../utils/sessionManager';
 import { launchImageLibrary, launchCamera, ImagePickerResponse, MediaType, PhotoQuality } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-//import { BlurView } from '@react-native-community/blur';
-import Ionicons from 'react-native-vector-icons/Ionicons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopProfile'>;
 
@@ -37,16 +35,10 @@ interface VendorProfile {
 /* SaveModal (fixed: compact overlay + reliable icon fallback) */
 const SaveModal: React.FC<{ visible: boolean; onClose: () => void }> = ({ visible, onClose }) => {
   // Fallback-rendering component for the icon
-  const IconSafe: React.FC<{ size?: number; color?: string; style?: any }> = ({ size = 56, color = '#22C55E', style }) => {
-    // Use Ionicons (will render correctly when vector icons are installed and native fonts are bundled).
-    // If for any reason the font isn't rendering, the fallback below provides a consistent look (styled ✓).
-    // We don't try to "detect" font loading — instead we always render Ionicons and also render a fallback
-    // that will look correct if the icon font doesn't show (the fallback is visible layer if needed).
+  const IconSafe: React.FC<{ size?: number; style?: any }> = ({ size = 56, style }) => {
     return (
       <View style={[styles.iconWrapper, style]}>
-        {/* Primary icon (native vector) */}
-        <Ionicons name="checkmark-circle" size={size} color={color} />
-        {/* Fallback (will be visually identical if the vector font fails) */}
+        {/* Fallback checkmark only */}
         <View style={[styles.iconFallbackContainer, { width: size, height: size, borderRadius: size / 2 }]}>
           <Text style={[styles.iconFallbackText, { fontSize: Math.round(size * 0.45) }]}>✓</Text>
         </View>
@@ -528,89 +520,115 @@ const ShopProfileScreen: React.FC<Props> = () => {
     setLoading(false);
   };
 
-  if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color="#22C55E" /></View>;
+  if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color="#4CAF50" /></View>;
   if (error) return <View style={styles.centered}><Text style={styles.errorText}>{error}</Text></View>;
   if (!vendor) return <View style={styles.centered}><Text>No vendor profile found.</Text></View>;
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.profilePictureSection}>
-        <View style={styles.profilePictureContainer}>
-          <TouchableOpacity style={styles.profilePicture} onPress={handleImagePicker} disabled={!isEditing}>
-            {profileImage ? <Image source={{ uri: profileImage }} style={styles.profileImage} /> : <Text style={styles.profileInitial}>{(session?.firstName || vendor.first_name || 'V').charAt(0)}</Text>}
-          </TouchableOpacity>
-          {isEditing && (
-            <TouchableOpacity style={styles.editIconButton} onPress={handleImagePicker}>
-              <Text style={styles.editIcon}>📷</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      <ScrollView 
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <View style={styles.profilePictureContainer}>
+            <TouchableOpacity style={styles.profilePicture} onPress={handleImagePicker} disabled={!isEditing}>
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.profileImage} />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Text style={styles.profileInitial}>
+                    {(session?.firstName || vendor.first_name || 'V').charAt(0)}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
-          )}
-        </View>
+            {isEditing && (
+              <TouchableOpacity style={styles.editIconButton} onPress={handleImagePicker}>
+                <Text style={styles.editIcon}>+</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-        <Text style={styles.editProfileTitle}>
-          {session?.firstName ? `${session.firstName} ${session.lastName || ''}` : `${vendor.first_name} ${vendor.last_name || ''}`}
-        </Text>
-      </View>
-
-      <View style={styles.formSection}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Stall No.</Text>
-          <View style={styles.readOnlyInput}>
-            <Text style={styles.readOnlyText}>{formData.stallNo}</Text>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>
+              {session?.firstName ? `${session.firstName} ${session.lastName || ''}` : `${vendor.first_name} ${vendor.last_name || ''}`}
+            </Text>
+            <View style={styles.stallBadge}>
+              <Text style={styles.stallBadgeText}>Stall {formData.stallNo}</Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Business Name</Text>
-          <TextInput
-            style={[styles.input, !isEditing && styles.inputDisabled]}
-            value={formData.businessName}
-            onChangeText={(text) => setFormData({ ...formData, businessName: text })}
-            placeholder="Enter business name"
-            editable={isEditing}
-          />
-        </View>
+        {/* Information Card */}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardHeaderTitle}>Shop Information</Text>
+          </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Contact No.</Text>
-          <View style={styles.contactInputContainer}>
-            <Text style={styles.contactPrefix}>+63</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Business Name</Text>
             <TextInput
-              style={[styles.input, styles.contactInput, !isEditing && styles.inputDisabled]}
-              value={formData.contactNo}
-              onChangeText={(text) => {
-                const sanitized = text.replace(/\D/g, '').slice(0, 10);
-                setFormData({ ...formData, contactNo: sanitized });
-              }}
-              placeholder="Enter contact number"
-              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
+              style={[styles.input, !isEditing && styles.inputDisabled]}
+              value={formData.businessName}
+              onChangeText={(text) => setFormData({ ...formData, businessName: text })}
+              placeholder="Enter business name"
+              placeholderTextColor="#999"
               editable={isEditing}
-              maxLength={10}
             />
           </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Contact Number</Text>
+            <View style={styles.contactInputContainer}>
+              <View style={styles.contactPrefixContainer}>
+                <Text style={styles.contactPrefix}>+63</Text>
+              </View>
+              <TextInput
+                style={[styles.contactInput, !isEditing && styles.inputDisabled]}
+                value={formData.contactNo}
+                onChangeText={(text) => {
+                  const sanitized = text.replace(/\D/g, '').slice(0, 10);
+                  setFormData({ ...formData, contactNo: sanitized });
+                }}
+                placeholder="9XX XXX XXXX"
+                placeholderTextColor="#999"
+                keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
+                editable={isEditing}
+                maxLength={10}
+              />
+            </View>
+          </View>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Operating Hours</Text>
+        {/* Operating Hours Card */}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardHeaderTitle}>Operating Hours</Text>
+          </View>
+
           <View style={styles.scheduleContainer}>
-            {DAYS.map((day) => {
+            {DAYS.map((day, index) => {
               const entry = hoursSchedule[day];
+              const isLastDay = index === DAYS.length - 1;
+              
               if (!isEditing) {
                 return (
-                  <View key={day} style={styles.scheduleRow}>
-                    <Text style={styles.dayLabel}>{day}</Text>
-                    <View style={styles.rowWithGap}>
+                  <View key={day} style={[styles.scheduleRow, !isLastDay && styles.scheduleRowBorder]}>
+                    <Text style={styles.dayLabel}>{day.substring(0, 3)}</Text>
+                    <View style={styles.scheduleTimeContainer}>
                       {entry.open ? (
-                        <>
-                          <View style={[styles.timeInput, styles.centeredJustify]}>
-                            <Text style={styles.timeInputText}>{entry.start}</Text>
-                          </View>
-                          <Text style={styles.timeSeparator}>to</Text>
-                          <View style={[styles.timeInput, styles.centeredJustify]}>
-                            <Text style={styles.timeInputText}>{entry.end}</Text>
-                          </View>
-                        </>
+                        <View style={styles.timeRangeContainer}>
+                          <Text style={styles.timeText}>{entry.start}</Text>
+                          <Text style={styles.timeSeparatorDash}>-</Text>
+                          <Text style={styles.timeText}>{entry.end}</Text>
+                        </View>
                       ) : (
-                        <Text style={styles.closedText}>Closed</Text>
+                        <Text style={styles.closedTextBold}>Closed</Text>
                       )}
                     </View>
                   </View>
@@ -618,46 +636,50 @@ const ShopProfileScreen: React.FC<Props> = () => {
               }
 
               return (
-                <View key={day} style={[styles.scheduleRow, entry.open ? styles.opacity1 : styles.opacity05]}> 
-                  <Text style={styles.dayLabel}>{day}</Text>
-                  <View style={styles.switchContainer}>
+                <View key={day} style={[styles.scheduleRowEdit, !isLastDay && styles.scheduleRowBorder]}> 
+                  <View style={styles.dayWithSwitchContainer}>
+                    <Text style={[styles.dayLabelEdit, !entry.open && styles.dayLabelDisabled]}>
+                      {day.substring(0, 3)}
+                    </Text>
                     <Switch
                       value={entry.open}
                       onValueChange={(val) => setHoursSchedule((prev) => ({ ...prev, [day]: { ...prev[day], open: val } }))}
                       disabled={!isEditing}
-                      trackColor={{ true: '#22C55E', false: '#9CA3AF' }}
-                      ios_backgroundColor="#9CA3AF"
-                      thumbColor={entry.open ? '#FFFFFF' : '#6B7280'}
+                      trackColor={{ true: '#4CAF50', false: '#E0E0E0' }}
+                      ios_backgroundColor="#E0E0E0"
+                      thumbColor="#FFFFFF"
+                      style={styles.switchCompact}
                     />
-                    <Text style={[styles.openIndicator, entry.open ? styles.openText : styles.closedText]}>{entry.open ? 'Open' : 'Closed'}</Text>
                   </View>
 
                   {entry.open ? (
-                    <>
+                    <View style={styles.timeInputsContainer}>
                       <TouchableOpacity
                         activeOpacity={0.8}
                         onPress={() => {
                           setCurrentEditingTime({ day, field: 'start', currentValue: entry.start });
                           setTimePickerVisible(true);
                         }}
-                        style={[styles.timeInput]}
+                        style={styles.timeInputButton}
                       >
-                        <Text style={styles.timeInputText}>{entry.start}</Text>
+                        <Text style={styles.timeInputButtonText}>{entry.start}</Text>
                       </TouchableOpacity>
-                      <Text style={styles.timeSeparator}>to</Text>
+                      <Text style={styles.timeSeparatorEdit}>to</Text>
                       <TouchableOpacity
                         activeOpacity={0.8}
                         onPress={() => {
                           setCurrentEditingTime({ day, field: 'end', currentValue: entry.end });
                           setTimePickerVisible(true);
                         }}
-                        style={[styles.timeInput]}
+                        style={styles.timeInputButton}
                       >
-                        <Text style={styles.timeInputText}>{entry.end}</Text>
+                        <Text style={styles.timeInputButtonText}>{entry.end}</Text>
                       </TouchableOpacity>
-                    </>
+                    </View>
                   ) : (
-                    <View style={styles.flex1} />
+                    <View style={styles.closedPlaceholder}>
+                      <Text style={styles.closedPlaceholderText}>Closed all day</Text>
+                    </View>
                   )}
                 </View>
               );
@@ -665,8 +687,9 @@ const ShopProfileScreen: React.FC<Props> = () => {
           </View>
         </View>
 
+        {/* Action Button */}
         <TouchableOpacity
-          style={styles.saveButton}
+          style={styles.actionButton}
           onPress={async () => {
             if (isEditing) {
               try {
@@ -682,9 +705,11 @@ const ShopProfileScreen: React.FC<Props> = () => {
             }
           }}
         >
-          <Text style={styles.saveButtonText}>{isEditing ? 'Save Changes' : 'Edit Profile'}</Text>
+          <Text style={styles.actionButtonText}>{isEditing ? 'Save Changes' : 'Edit Profile'}</Text>
         </TouchableOpacity>
-      </View>
+
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
 
       <SaveModal visible={saveModalVisible} onClose={() => setSaveModalVisible(false)} />
 
@@ -707,7 +732,7 @@ const ShopProfileScreen: React.FC<Props> = () => {
         }}
         initialTime={currentEditingTime?.currentValue}
       />
-    </ScrollView>
+    </View>
   );
 };
 
@@ -743,163 +768,628 @@ const styles = StyleSheet.create({
   flex1: {
     flex: 1,
   },
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  errorText: { color: 'red', fontSize: 16, fontWeight: '500' },
+  
+  // Main container
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F8F9FA',
+  },
+  centered: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+  },
+  errorText: { 
+    color: '#E53935', 
+    fontSize: 16, 
+    fontWeight: '600',
+  },
 
-  profilePictureSection: { alignItems: 'center', marginTop: 18, marginBottom: 10 },
-  profilePictureContainer: { position: 'relative' },
+  // Header with gradient effect
+  headerGradient: {
+    backgroundColor: '#4CAF50',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerContent: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+  },
+
+  // Scroll view
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 10,
+  },
+
+  // Profile Card
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 10,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  profilePictureContainer: { 
+    position: 'relative',
+    marginRight: 12,
+  },
   profilePicture: {
-    width: 100, height: 100, borderRadius: 50, backgroundColor: '#E0E0E0',
-    alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3
+    width: 60, 
+    height: 60, 
+    borderRadius: 30, 
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2, 
+    elevation: 2,
   },
-  profileInitial: { fontSize: 40, fontWeight: 'bold', color: '#666' },
+  profileImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileInitial: { 
+    fontSize: 24, 
+    fontWeight: '800', 
+    color: '#333333',
+  },
   editIconButton: {
-    position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff'
+    position: 'absolute', 
+    bottom: 0, 
+    right: 0, 
+    width: 22, 
+    height: 22, 
+    borderRadius: 11,
+    backgroundColor: '#333333', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 2, 
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  editIcon: { fontSize: 16, color: '#fff' },
-  profileImage: { width: '100%', height: '100%', borderRadius: 50 },
-
-  editProfileTitle: { fontSize: 22, fontWeight: '700', color: '#333', textAlign: 'center', marginTop: 12 },
-
-  formSection: {
-    flex: 1, backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: 20, paddingTop: 22, marginTop: 12
+  editIcon: { 
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginTop: -1,
+  },
+  profileImage: { 
+    width: '100%', 
+    height: '100%', 
+    borderRadius: 30,
+  },
+  profileInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  profileName: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#1F2937', 
+    marginBottom: 4,
+  },
+  stallBadge: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    alignSelf: 'flex-start',
+  },
+  stallBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#666666',
   },
 
-  inputGroup: { marginBottom: 18 },
-  label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  // Info Cards
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 10,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  cardHeaderIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  cardHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    letterSpacing: 0.2,
+  },
+
+  // Form inputs
+  inputGroup: { 
+    marginBottom: 8,
+  },
+  label: { 
+    fontSize: 11, 
+    fontWeight: '600', 
+    color: '#6B7280', 
+    marginBottom: 4,
+    letterSpacing: 0.2,
+  },
   input: {
-    borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 12,
-    fontSize: 16, backgroundColor: '#F9FAFB', color: '#374151'
+    borderWidth: 1, 
+    borderColor: '#E5E7EB', 
+    borderRadius: 6, 
+    paddingHorizontal: 10, 
+    paddingVertical: 8,
+    fontSize: 13, 
+    backgroundColor: '#FAFAFA', 
+    color: '#1F2937',
+    fontWeight: '500',
   },
-  inputDisabled: { backgroundColor: '#F5F5F5', color: '#666' },
+  inputDisabled: { 
+    backgroundColor: '#F9FAFB', 
+    color: '#9CA3AF',
+    borderColor: '#F0F0F0',
+  },
   readOnlyInput: {
-    borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#F8F8F8'
+    borderWidth: 1, 
+    borderColor: '#E5E7EB', 
+    borderRadius: 6, 
+    paddingHorizontal: 10, 
+    paddingVertical: 8, 
+    backgroundColor: '#F9FAFB',
   },
-  readOnlyText: { fontSize: 16, color: '#666' },
+  readOnlyText: { 
+    fontSize: 13, 
+    color: '#9CA3AF', 
+    fontWeight: '500',
+  },
 
+  // Contact input
   contactInputContainer: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#D1D5DB',
-    borderRadius: 8, backgroundColor: '#F9FAFB', overflow: 'hidden'
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB',
+    borderRadius: 6, 
+    backgroundColor: '#FAFAFA', 
+    overflow: 'hidden',
   },
-  contactPrefix: { fontSize: 16, color: '#374151', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#E5E7EB', borderRightWidth: 1, borderRightColor: '#D1D5DB' },
-  contactInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: '#374151' },
-
-  saveButton: {
-    backgroundColor: '#4CAF50', paddingVertical: 15, borderRadius: 25, alignItems: 'center', marginTop: 20, marginBottom: 30,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3
+  contactPrefixContainer: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E7EB',
   },
-  saveButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  contactPrefix: { 
+    fontSize: 13, 
+    color: '#4B5563', 
+    fontWeight: '600',
+  },
+  contactInput: { 
+    flex: 1, 
+    paddingHorizontal: 10, 
+    paddingVertical: 8, 
+    fontSize: 13, 
+    color: '#1F2937',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    fontWeight: '500',
+  },
 
-  scheduleContainer: { backgroundColor: '#fff' },
-  scheduleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8, flexWrap: 'nowrap' },
-  dayLabel: { width: 80, fontSize: 14, color: '#374151' },
-  switchContainer: { width: 50, alignItems: 'center' },
+  // Operating Hours
+  scheduleContainer: { 
+    backgroundColor: '#FAFAFA',
+    borderRadius: 6,
+    padding: 2,
+  },
+  scheduleRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  scheduleRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  scheduleRowEdit: {
+    flexDirection: 'row',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dayLabel: { 
+    width: 40, 
+    fontSize: 12, 
+    color: '#1F2937',
+    fontWeight: '600',
+  },
+  dayLabelEdit: {
+    fontSize: 13,
+    color: '#1F2937',
+    fontWeight: '600',
+    minWidth: 40,
+  },
+  dayLabelDisabled: {
+    color: '#9CA3AF',
+  },
+  dayWithSwitchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  switchCompact: {
+    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
+  },
+  scheduleTimeContainer: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  timeRangeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeText: {
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  timeSeparatorDash: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  closedTextBold: {
+    fontSize: 12,
+    color: '#E53935',
+    fontWeight: '600',
+  },
+  switchContainer: { 
+    width: 55, 
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  timeInputsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  timeInputButton: {
+    borderWidth: 1, 
+    borderColor: '#E5E7EB', 
+    borderRadius: 6, 
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  timeInputButtonText: { 
+    color: '#1F2937', 
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  timeSeparatorEdit: { 
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '500',
+    marginHorizontal: 2,
+  },
+  closedPlaceholder: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  closedPlaceholderText: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
   timeInput: {
-    borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8,
-    width: 88, backgroundColor: '#F9FAFB', color: '#374151'
+    borderWidth: 1, 
+    borderColor: '#E5E5E5', 
+    borderRadius: 6, 
+    paddingHorizontal: 12, 
+    paddingVertical: 10,
+    width: 90, 
+    backgroundColor: '#F9F9F9', 
+    color: '#333333',
   },
-  timeInputText: { color: '#374151', fontSize: 14 },
-  timeSeparator: { marginHorizontal: 8, color: '#6B7280' },
-  openIndicator: { marginLeft: 8, fontSize: 14 },
-  openText: { color: '#22C55E', fontWeight: '600' },
-  closedText: { color: '#9CA3AF', fontWeight: '600' },
+  timeInputText: { 
+    color: '#333333', 
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  timeSeparator: { 
+    marginHorizontal: 4, 
+    color: '#999999',
+    fontSize: 13,
+  },
+  openIndicator: { 
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  openText: { color: '#22C55E' },
+  closedText: { color: '#E53935' },
 
-  /* Save modal styles (compact) */
-/* Add these styles (replace or merge into your StyleSheet) */
-  /* backdrop dims the screen and centers the card */
+  // Action Button
+  actionButton: {
+    backgroundColor: '#333333',
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  actionButtonIcon: {
+    fontSize: 16,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  bottomSpacer: {
+    height: 10,
+  },
+
+  /* Save modal styles */
   saveModalBackdrop: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.36)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  /* the white card */
   saveModalCard: {
     width: 300,
     maxWidth: '92%',
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingVertical: 22,
-    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    // subtle shadow
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 12,
   },
   saveModalIcon: {
-    marginBottom: 10,
+    marginBottom: 16,
   },
   saveModalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     color: '#22C55E',
-    fontWeight: '700',
-    marginBottom: 6,
+    fontWeight: '800',
+    marginBottom: 8,
   },
   saveModalMessage: {
     fontSize: 15,
-    color: '#374151',
+    color: '#6B7280',
     textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 20,
+    marginBottom: 24,
+    lineHeight: 22,
   },
   saveModalOkButton: {
     backgroundColor: '#22C55E',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 26,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    minWidth: 140,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   saveModalOkText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 16,
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
 
-  /* icon wrapper: renders Ionicons and a fallback layered on top (fallback visible if font shows as glyph box) */
   iconWrapper: {
     width: 64,
     height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  /* fallback circle behind/check — will match icon size and style */
   iconFallbackContainer: {
     position: 'absolute',
-    backgroundColor: '#E6F9EE',
+    backgroundColor: '#22C55E',
     borderWidth: 2,
     borderColor: '#22C55E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconFallbackText: {
-    color: '#22C55E',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
 
-
-  /* time picker */
-  timePickerOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
-  timePickerContainer: { backgroundColor: '#fff', borderRadius: 20, padding: 20, width: '86%', maxWidth: 380, elevation: 8 },
-  timePickerTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 16, textAlign: 'center' },
-  timePickerContent: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 250, marginBottom: 20, position: 'relative' },
-  pickerColumn: { flex: 1, height: 250, position: 'relative' },
-  pickerScrollContent: { paddingVertical: VERTICAL_PADDING },
-  pickerItem: { height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' },
-  pickerItemText: { fontSize: 28, color: '#B0B0B0', fontWeight: '400' },
-  pickerItemTextSelected: { fontSize: 34, color: '#111', fontWeight: '800' },
-  pickerHighlight: { position: 'absolute', top: '50%', left: 8, right: 8, height: ITEM_HEIGHT, marginTop: -ITEM_HEIGHT / 2, backgroundColor: 'rgba(232,245,233,0.9)', borderRadius: 8, zIndex: -1 },
-  timeSeparatorColon: { fontSize: 32, color: '#1F2937', fontWeight: '600', marginHorizontal: 8 },
-  timePickerButtons: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 },
-  timePickerCancelButton: { flex: 1, paddingVertical: 12, marginRight: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ccc', alignItems: 'center' },
-  timePickerCancelText: { fontSize: 16, color: '#666' },
-  timePickerConfirmButton: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#4CAF50', alignItems: 'center' },
-  timePickerConfirmText: { fontSize: 16, color: '#fff', fontWeight: 'bold' }
+  /* Time picker */
+  timePickerOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0, 0, 0, 0.6)', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+  },
+  timePickerContainer: { 
+    backgroundColor: '#FFFFFF', 
+    borderRadius: 24, 
+    padding: 28, 
+    width: '88%', 
+    maxWidth: 380, 
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+  },
+  timePickerTitle: { 
+    fontSize: 22, 
+    fontWeight: '800', 
+    color: '#1F2937', 
+    marginBottom: 24, 
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+  timePickerContent: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-around', 
+    alignItems: 'center', 
+    height: 250, 
+    marginBottom: 28, 
+    position: 'relative',
+  },
+  pickerColumn: { 
+    flex: 1, 
+    height: 250, 
+    position: 'relative',
+  },
+  pickerScrollContent: { 
+    paddingVertical: VERTICAL_PADDING,
+  },
+  pickerItem: { 
+    height: ITEM_HEIGHT, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+  },
+  pickerItemText: { 
+    fontSize: 22, 
+    color: '#D1D5DB', 
+    fontWeight: '400',
+  },
+  pickerItemTextSelected: { 
+    fontSize: 34, 
+    color: '#1F2937', 
+    fontWeight: '800',
+  },
+  pickerHighlight: { 
+    position: 'absolute', 
+    top: '50%', 
+    left: 8, 
+    right: 8, 
+    height: ITEM_HEIGHT, 
+    marginTop: -ITEM_HEIGHT / 2, 
+    backgroundColor: 'rgba(0,0,0,0.03)', 
+    borderRadius: 12, 
+    zIndex: -1,
+    borderWidth: 2,
+    borderColor: '#333333',
+  },
+  timeSeparatorColon: { 
+    fontSize: 36, 
+    color: '#1F2937', 
+    fontWeight: '800', 
+    marginHorizontal: 8,
+  },
+  timePickerButtons: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginTop: 8,
+    gap: 12,
+  },
+  timePickerCancelButton: { 
+    flex: 1, 
+    paddingVertical: 16, 
+    borderRadius: 12, 
+    borderWidth: 1.5, 
+    borderColor: '#E5E7EB', 
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  timePickerCancelText: { 
+    fontSize: 16, 
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  timePickerConfirmButton: { 
+    flex: 1, 
+    paddingVertical: 16, 
+    borderRadius: 12, 
+    backgroundColor: '#333333', 
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  timePickerConfirmText: { 
+    fontSize: 16, 
+    color: '#FFFFFF', 
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  }
 });
 
 export default ShopProfileScreen;

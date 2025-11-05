@@ -3,13 +3,69 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Swipeable } from 'react-native-gesture-handler';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, ScrollView } from 'react-native';
-import { Portal, Dialog, Button } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../../navigation/types';
 import { supabase } from '../../../services/supabase';
 import { SessionManager } from '../../../utils/sessionManager';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductManagement'>;
+
+/* Success Modal Component - matches ShopProfileScreen design */
+const SuccessModal: React.FC<{ visible: boolean; onClose: () => void; title: string; message: string }> = ({ visible, onClose, title, message }) => {
+  const IconSafe: React.FC<{ size?: number; style?: any }> = ({ size = 56, style }) => {
+    return (
+      <View style={[successModalStyles.iconWrapper, style]}>
+        <View style={[successModalStyles.iconFallbackContainer, { width: size, height: size, borderRadius: size / 2 }]}>
+          <Text style={[successModalStyles.iconFallbackText, { fontSize: Math.round(size * 0.45) }]}>✓</Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={successModalStyles.backdrop}>
+        <View style={successModalStyles.card}>
+          <IconSafe size={64} style={successModalStyles.icon} />
+          <Text style={successModalStyles.title}>{title}</Text>
+          <Text style={successModalStyles.message}>{message}</Text>
+          <TouchableOpacity style={successModalStyles.okButton} onPress={onClose}>
+            <Text style={successModalStyles.okText}>OK</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+/* Delete Confirmation Modal - black/white theme */
+const DeleteConfirmModal: React.FC<{ 
+  visible: boolean; 
+  onClose: () => void; 
+  onConfirm: () => void;
+  productName: string;
+}> = ({ visible, onClose, onConfirm, productName }) => {
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
+      <View style={deleteModalStyles.backdrop}>
+        <View style={deleteModalStyles.card}>
+          <Text style={deleteModalStyles.title}>Delete Product</Text>
+          <Text style={deleteModalStyles.message}>
+            Are you sure you want to delete "{productName}"?
+          </Text>
+          <View style={deleteModalStyles.buttonRow}>
+            <TouchableOpacity style={deleteModalStyles.cancelButton} onPress={onClose}>
+              <Text style={deleteModalStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={deleteModalStyles.deleteButton} onPress={onConfirm}>
+              <Text style={deleteModalStyles.deleteText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) => {
   const [products, setProducts] = useState<any[]>([]);
@@ -29,7 +85,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   const [saving, setSaving] = useState(false);
   const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
-  const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
+  const [successModal, setSuccessModal] = useState<{ visible: boolean; title: string; message: string }>({ visible: false, title: '', message: '' });
 
   // Helper function to get vendor's market section category
   const getVendorCategory = useCallback(() => {
@@ -108,13 +164,21 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
   }, [categories, getVendorCategory]);
 
   // Helper function to get filtered products based on selected category
+  // Excludes products that are already added to vendor's product list
   const getFilteredProducts = useCallback(() => {
     if (!form.category_id) {
       return [];
     }
 
-    return availableProducts.filter(product => product.category_id === form.category_id);
-  }, [form.category_id, availableProducts]);
+    // Get list of product IDs that are already added
+    const existingProductIds = products.map(p => p.product_id);
+
+    // Filter by category and exclude already added products
+    return availableProducts.filter(product => 
+      product.category_id === form.category_id && 
+      !existingProductIds.includes(product.id)
+    );
+  }, [form.category_id, availableProducts, products]);
 
   // Get current vendor profile
   const getCurrentVendorProfile = async () => {
@@ -267,11 +331,11 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
 
   // Auto-set category based on vendor's market section
-  // Show product dropdown when category is selected (only for new products)
+  // Show product dropdown when category is selected
   useEffect(() => {
-    if (form.category_id && !editProduct) {
+    if (form.category_id) {
       const filteredProducts = getFilteredProducts();
-      if (filteredProducts.length > 0) {
+      if (filteredProducts.length > 0 && !editProduct) {
         setShowProductNameDropdown(true);
       }
     }
@@ -322,6 +386,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
     setShowUomDropdown(false);
     setShowCategoryDropdown(false);
+    setShowProductNameDropdown(false);
     setModalVisible(true);
   };
 
@@ -405,8 +470,8 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           );
           
           // Show success message and close modal
-          Alert.alert('Success', 'Product updated successfully');
           closeModal();
+          setSuccessModal({ visible: true, title: 'Success', message: 'Product updated successfully' });
         }
       } else {
         // Check if product already exists
@@ -473,9 +538,9 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           console.error('Vendor product error:', vendorProductError);
           Alert.alert('Error', 'Failed to add product to vendor');
         } else {
-          Alert.alert('Success', 'Product added successfully');
           closeModal();
           fetchProducts();
+          setSuccessModal({ visible: true, title: 'Success', message: 'Product added successfully' });
         }
       }
     } catch (err) {
@@ -531,7 +596,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
       } else {
         setProducts(prev => prev.filter(p => p.id !== deleteTarget.id));
         setConfirmDeleteVisible(false);
-        setInfoDialog({ visible: true, title: 'Success', message: 'Product deleted successfully' });
+        setSuccessModal({ visible: true, title: 'Success', message: 'Product deleted successfully' });
       }
     } catch (err) {
       console.error('Delete error:', err);
@@ -569,9 +634,15 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
-        <Text style={styles.addBtnText}>+ Add Product</Text>
-      </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Product Management</Text>
+      </View>
+
+      <View style={styles.content}>
+        <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
+          <Text style={styles.addBtnText}>+ Add Product</Text>
+        </TouchableOpacity>
 
       {/* Tabs: Available | Unavailable */}
       <View style={styles.tabsContainer}>
@@ -644,6 +715,7 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           </View>
         }
       />
+      </View>
 
       <Modal visible={modalVisible} animationType="slide" transparent>
         <TouchableOpacity
@@ -652,11 +724,16 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
           onPress={() => {
             setShowUomDropdown(false);
             setShowCategoryDropdown(false);
+            setShowProductNameDropdown(false);
             setModalVisible(false);
           }}
         >
           <TouchableOpacity style={styles.modalCardCustom} activeOpacity={1} onPress={() => { }}>
-            <Text style={styles.modalTitleCustom}>{editProduct ? 'Edit Product' : 'Add New Product'}</Text>
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.modalTitleCustom}>{editProduct ? 'Edit Product' : 'Add New Product'}</Text>
 
             <View style={styles.fieldRowVertical}>
               <Text style={styles.fieldLabelVertical}>Product Category:</Text>
@@ -714,20 +791,26 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
               <Text style={styles.fieldLabelVertical}>Product Name:</Text>
               <View style={styles.dropdownContainer}>
                 <TextInput
-                  style={[styles.inputVertical, editProduct && styles.inputDisabled]}
+                  style={styles.inputVertical}
                   value={form.name}
                   onChangeText={text => {
                     setForm(f => ({ ...f, name: text }));
-                    if (!editProduct) {
+                    if (form.category_id) {
                       setShowProductNameDropdown(true);
                     }
                   }}
-                  editable={!editProduct}
-                  placeholder="Product name"
+                  onFocus={() => {
+                    if (form.category_id) {
+                      setShowProductNameDropdown(true);
+                    } else {
+                      Alert.alert('Notice', 'Please select a product category first');
+                    }
+                  }}
+                  placeholder="Type or select product"
                   autoCorrect={false}
                   autoCapitalize="words"
                 />
-                {!editProduct && showProductNameDropdown && (
+                {showProductNameDropdown && (
                   <View style={styles.dropdownMenuScrollable}>
                     <ScrollView
                       style={styles.scrollableContainer}
@@ -846,41 +929,26 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
                 <Text style={styles.submitBtnText}>{saving ? 'Saving...' : (editProduct ? 'Save' : 'Add')}</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
-      {/* Themed dialogs */}
-      <Portal>
-        <Dialog visible={confirmDeleteVisible} onDismiss={() => setConfirmDeleteVisible(false)} style={styles.dialogCard}>
-          <Dialog.Title style={styles.dialogTitle}>Delete Product</Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.dialogMessage}>
-              Are you sure you want to delete "{deleteTarget?.products?.name}"?
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions style={styles.dialogActions}>
-            <Button mode="outlined" textColor="#64748B" onPress={() => setConfirmDeleteVisible(false)} style={styles.dialogBtn}>
-              Cancel
-            </Button>
-            <Button mode="contained" buttonColor="#DC2626" textColor="#FFFFFF" onPress={performDelete} style={styles.dialogBtn}>
-              Delete
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
+      {/* Delete Confirmation Modal - black/white theme */}
+      <DeleteConfirmModal
+        visible={confirmDeleteVisible}
+        onClose={() => setConfirmDeleteVisible(false)}
+        onConfirm={performDelete}
+        productName={deleteTarget?.products?.name || ''}
+      />
 
-        <Dialog visible={infoDialog.visible} onDismiss={() => setInfoDialog({ visible: false, title: '', message: '' })} style={styles.dialogCard}>
-          <Dialog.Title style={[styles.dialogTitle, { color: '#22C55E' }]}>{infoDialog.title}</Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.dialogMessage}>{infoDialog.message}</Text>
-          </Dialog.Content>
-          <Dialog.Actions style={styles.dialogActions}>
-            <Button mode="contained" buttonColor="#22C55E" textColor="#FFFFFF" onPress={() => setInfoDialog({ visible: false, title: '', message: '' })} style={styles.dialogBtn}>
-              OK
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      {/* Success Modal - matches ShopProfileScreen design */}
+      <SuccessModal
+        visible={successModal.visible}
+        onClose={() => setSuccessModal({ visible: false, title: '', message: '' })}
+        title={successModal.title}
+        message={successModal.message}
+      />
     </View>
   );
 };
@@ -888,126 +956,149 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F8F9FA',
+  },
+  header: {
+    paddingTop: 48,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  content: {
+    flex: 1,
     padding: 16,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F8F9FA',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#64748B',
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   errorText: {
-    fontSize: 16,
-    color: '#EF4444',
+    fontSize: 15,
+    color: '#E53935',
     textAlign: 'center',
     marginBottom: 16,
+    fontWeight: '600',
   },
   retryBtn: {
-    backgroundColor: '#22C55E',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: '#333333',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
   },
   retryBtnText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 16,
     textAlign: 'center',
   },
   addBtn: {
-    backgroundColor: '#22C55E',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginBottom: 20,
+    backgroundColor: '#333333',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 6,
+    marginBottom: 16,
     alignSelf: 'center',
   },
   addBtnText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   productRow: {
     backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   productRowUnavailable: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   productInfo: {
     flex: 1,
     marginRight: 8,
   },
   productName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 4,
+    color: '#1F2937',
+    marginBottom: 3,
     flexShrink: 1,
   },
   productCategory: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 12,
+    color: '#6B7280',
     flexShrink: 1,
+    fontWeight: '500',
   },
   productPrice: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#059669',
+    color: '#1F2937',
     marginRight: 12,
   },
   statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 12,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
   },
   statusDotAvailable: {
     backgroundColor: '#22C55E',
   },
   statusDotUnavailable: {
-    backgroundColor: '#94A3B8',
+    backgroundColor: '#9CA3AF',
   },
   iconBtn: {
-    padding: 8,
-    marginLeft: 8,
+    padding: 6,
+    marginLeft: 6,
   },
   iconText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   rightAction: {
-    width: 96,
+    width: 80,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FEE2E2',
-    marginVertical: 6,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    marginVertical: 4,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
   },
   rightActionText: {
     color: '#DC2626',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
   emptyContainer: {
@@ -1015,92 +1106,99 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   noProducts: {
-    fontSize: 16,
-    color: '#64748B',
-    marginBottom: 16,
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 12,
+    fontWeight: '500',
   },
   tabsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 4,
     marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    paddingVertical: 8,
+    borderRadius: 6,
   },
   tabButtonActive: {
-    borderBottomColor: '#22C55E',
+    backgroundColor: '#333333',
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
   },
   tabTextActive: {
-    color: '#22C55E',
+    color: '#FFFFFF',
   },
   tabTextInactive: {
-    color: '#94A3B8',
+    color: '#6B7280',
   },
 
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    padding: 20,
+    paddingTop: 80,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   modalCardCustom: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 12,
+    padding: 20,
     width: '100%',
-    maxHeight: '90%',
+    maxHeight: '85%',
     overflow: 'hidden',
   },
   modalTitleCustom: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#22C55E',
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 16,
     letterSpacing: 0.2,
   },
   imagePlaceholder: {
     width: '100%',
-    height: 120,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    marginBottom: 20,
+    height: 100,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    marginBottom: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
   fieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   fieldRowVertical: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   fieldLabel: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
-    marginRight: 12,
-    minWidth: 60,
+    color: '#4B5563',
+    marginRight: 10,
+    minWidth: 50,
   },
   fieldLabelVertical: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    color: '#4B5563',
+    marginBottom: 6,
   },
   marketSectionText: {
-    fontSize: 14,
+    fontSize: 11,
     color: '#9CA3AF',
-    marginTop: 4,
+    marginTop: 3,
     fontStyle: 'italic',
   },
   priceRow: {
@@ -1109,37 +1207,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   currency: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#059669',
-    marginRight: 8,
+    color: '#1F2937',
+    marginRight: 6,
   },
   inputPrice: {
     flex: 1,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 16,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
     backgroundColor: '#F9FAFB',
-    color: '#222',
+    color: '#1F2937',
   },
   inputVertical: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 16,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
     backgroundColor: '#F9FAFB',
     width: '100%',
-    color: '#222',
+    color: '#1F2937',
   },
   inputDisabled: {
     backgroundColor: '#F3F4F6',
     borderColor: '#D1D5DB',
-    opacity: 0.7,
+    opacity: 0.6,
   },
   dropdownContainer: {
     width: '100%',
@@ -1151,15 +1249,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    maxHeight: 200,
+    maxHeight: 180,
     zIndex: 1000,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     elevation: 5,
   },
   dropdownMenuScrollable: {
@@ -1168,105 +1266,259 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    maxHeight: 200,
+    maxHeight: 180,
     zIndex: 1000,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     elevation: 5,
   },
   scrollableContainer: {
-    maxHeight: 200,
+    maxHeight: 180,
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#F0F0F0',
   },
   dropdownItemText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#374151',
   },
   dropdownPlaceholder: {
     color: '#9CA3AF',
   },
   dropdownSelected: {
-    color: '#374151',
+    color: '#1F2937',
   },
   availabilityRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   availabilityBtn: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
     borderColor: '#E5E7EB',
     backgroundColor: '#F9FAFB',
     alignItems: 'center',
   },
   availabilityBtnActive: {
-    borderColor: '#22C55E',
-    backgroundColor: '#F0FDF4',
+    borderColor: '#333333',
+    backgroundColor: '#F5F5F5',
   },
   availabilityBtnText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
     color: '#6B7280',
   },
   availabilityBtnTextActive: {
-    color: '#22C55E',
+    color: '#1F2937',
   },
   modalButtons: {
-    marginTop: 24,
-    gap: 12,
+    marginTop: 20,
+    gap: 10,
     flexDirection: 'row',
   },
   submitBtn: {
-    backgroundColor: '#22C55E',
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#333333',
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
   submitBtnText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   cancelBtn: {
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
   },
   cancelBtnText: {
-    color: '#64748B',
-    fontSize: 16,
+    color: '#6B7280',
+    fontSize: 14,
     fontWeight: '600',
   },
   dialogCard: {
-    borderRadius: 16,
+    borderRadius: 12,
   },
   dialogTitle: {
-    color: '#1E293B',
+    color: '#1F2937',
     fontWeight: '700',
+    fontSize: 17,
   },
   dialogMessage: {
-    color: '#374151',
+    color: '#4B5563',
     fontSize: 14,
   },
   dialogActions: {
     gap: 8,
   },
   dialogBtn: {
-    borderRadius: 10,
+    borderRadius: 8,
+  },
+});
+
+/* Delete Modal Styles - black/white theme */
+const deleteModalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  card: {
+    width: 300,
+    maxWidth: '92%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  title: {
+    fontSize: 20,
+    color: '#1F2937',
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: '#6B7280',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: '#DC2626',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  deleteText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+});
+
+/* Success Modal Styles - matches ShopProfileScreen design */
+const successModalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  card: {
+    width: 300,
+    maxWidth: '92%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  icon: {
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 24,
+    color: '#22C55E',
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  message: {
+    fontSize: 15,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  okButton: {
+    backgroundColor: '#22C55E',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    minWidth: 140,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  okText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  iconWrapper: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconFallbackContainer: {
+    position: 'absolute',
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#22C55E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconFallbackText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
 });
 
