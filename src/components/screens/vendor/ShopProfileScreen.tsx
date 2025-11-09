@@ -25,10 +25,23 @@ interface VendorProfile {
   phone_number?: string;
   products_services_description?: string;
   profile_image_url?: string;
+  market_section_id?: string;
+  default_category_id?: string;
   stall?: {
     stall_number: string;
     location_description?: string;
   };
+  market_sections?: {
+    id: string;
+    name: string;
+  };
+}
+
+interface ProductCategory {
+  id: string;
+  name: string;
+  description?: string;
+  market_section_id?: string;
 }
 
 /* -------------------- Compact Save Modal (with icon fallback) -------------------- */
@@ -272,6 +285,11 @@ const ShopProfileScreen: React.FC<Props> = () => {
   const [hoursSchedule, setHoursSchedule] = useState<Record<string, { open: boolean; start: string; end: string }>>(createInitialSchedule());
   const [timePickerVisible, setTimePickerVisible] = useState(false);
   const [currentEditingTime, setCurrentEditingTime] = useState<{ day: string; field: 'start' | 'end'; currentValue: string } | null>(null);
+  
+  // Category selection state
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [categoryPickerVisible, setCategoryPickerVisible] = useState(false);
 
   useEffect(() => {
     const fetchVendorProfile = async () => {
@@ -285,7 +303,13 @@ const ShopProfileScreen: React.FC<Props> = () => {
         }
         const { data: vendorData, error: vendorError } = await supabase
           .from('vendor_profiles')
-          .select('*')
+          .select(`
+            *,
+            market_sections (
+              id,
+              name
+            )
+          `)
           .eq('id', session.vendorId)
           .single();
 
@@ -338,6 +362,69 @@ const ShopProfileScreen: React.FC<Props> = () => {
           } catch (err) {
             console.warn('Invalid operating_hours JSON in vendor profile', err);
           }
+        }
+
+        // Set default category if exists
+        if (vendorData?.default_category_id) {
+          console.log('Setting default category from profile:', vendorData.default_category_id);
+          setSelectedCategoryId(vendorData.default_category_id);
+        }
+
+        // Fetch product categories filtered by vendor's market section
+        console.log('Fetching categories for market_section_id:', vendorData?.market_section_id);
+        const { data: categoriesData, error: catError } = await supabase
+          .from('product_categories')
+          .select('*')
+          .order('name');
+
+        console.log('Categories fetched:', categoriesData?.length, 'Error:', catError);
+
+        if (!catError && categoriesData) {
+          // Filter categories based on vendor's market_section_id
+          let filteredCategories = categoriesData;
+          
+          if (vendorData?.market_section_id) {
+            console.log('Filtering by market_section_id:', vendorData.market_section_id);
+            // Filter by matching market_section_id
+            filteredCategories = categoriesData.filter((cat: ProductCategory) => 
+              cat.market_section_id === vendorData.market_section_id
+            );
+            console.log('Filtered categories by ID:', filteredCategories.length);
+          }
+          
+          // If no categories match by ID, fall back to name-based filtering
+          if (filteredCategories.length === 0 && vendorData?.market_sections?.name) {
+            console.log('Falling back to name-based filtering for:', vendorData.market_sections.name);
+            const sectionName = vendorData.market_sections.name.toLowerCase();
+            filteredCategories = categoriesData.filter((cat: ProductCategory) => {
+              const catName = cat.name.toLowerCase();
+              
+              if (sectionName.includes('meat') || sectionName.includes('karne')) {
+                return catName.includes('beef') || catName.includes('chicken') || 
+                       catName.includes('pork') || catName.includes('meat');
+              }
+              
+              if (sectionName.includes('fish') || sectionName.includes('isda')) {
+                return catName.includes('fish') || catName.includes('isda') || 
+                       catName.includes('seafood');
+              }
+              
+              if (sectionName.includes('vegetable') || sectionName.includes('gulay')) {
+                return catName.includes('vegetable') || catName.includes('gulay');
+              }
+              
+              if (sectionName.includes('fruit') || sectionName.includes('prutas')) {
+                return catName.includes('fruit') || catName.includes('prutas');
+              }
+              
+              // For grocery or general, show all categories
+              return true;
+            });
+            console.log('Filtered categories by name:', filteredCategories.length);
+          }
+          
+          console.log('Final filtered categories:', filteredCategories.map(c => c.name));
+          setCategories(filteredCategories);
         }
 
       } catch (err) {
@@ -482,6 +569,7 @@ const ShopProfileScreen: React.FC<Props> = () => {
         business_name: businessNameCurrent,
         phone_number: phoneCurrent,
         operating_hours: serialized,
+        default_category_id: selectedCategoryId,
       };
       if (publicUrl) payload.profile_image_url = publicUrl;
 
@@ -605,6 +693,33 @@ const ShopProfileScreen: React.FC<Props> = () => {
           </View>
         </View>
 
+        {/* Default Product Category Card */}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardHeaderTitle}>Default Product Category</Text>
+          </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Main Category</Text>
+            <Text style={styles.helperText}>
+              Select your main product category. This will be automatically selected when adding products.
+            </Text>
+            <TouchableOpacity
+              style={[styles.categoryPickerButton, !isEditing && styles.inputDisabled]}
+              onPress={() => {
+                if (isEditing) setCategoryPickerVisible(true);
+              }}
+              disabled={!isEditing}
+            >
+              <Text style={[styles.categoryPickerText, !selectedCategoryId && styles.placeholderText]}>
+                {selectedCategoryId 
+                  ? categories.find(c => c.id === selectedCategoryId)?.name || 'Select category'
+                  : 'Select category'}
+              </Text>
+              <Text style={styles.dropdownIcon}>▼</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Operating Hours Card */}
         <View style={styles.infoCard}>
           <View style={styles.cardHeader}>
@@ -712,6 +827,55 @@ const ShopProfileScreen: React.FC<Props> = () => {
       </ScrollView>
 
       <SaveModal visible={saveModalVisible} onClose={() => setSaveModalVisible(false)} />
+
+      {/* Category Picker Modal */}
+      <Modal
+        visible={categoryPickerVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCategoryPickerVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.categoryPickerModal}>
+            <View style={styles.categoryPickerHeader}>
+              <Text style={styles.categoryPickerTitle}>Select Default Category</Text>
+              <TouchableOpacity onPress={() => setCategoryPickerVisible(false)}>
+                <Text style={styles.categoryPickerClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.categoryList}>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryItem,
+                    selectedCategoryId === category.id && styles.categoryItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedCategoryId(category.id);
+                    setCategoryPickerVisible(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.categoryItemText,
+                    selectedCategoryId === category.id && styles.categoryItemTextSelected
+                  ]}>
+                    {category.name}
+                  </Text>
+                  {selectedCategoryId === category.id && (
+                    <Text style={styles.categoryItemCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+              {categories.length === 0 && (
+                <Text style={styles.noCategoriesText}>
+                  No categories available for your market section
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <TimePickerModal
         visible={timePickerVisible}
@@ -1389,7 +1553,120 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', 
     fontWeight: '700',
     letterSpacing: 0.5,
-  }
+  },
+  
+  // Category picker styles
+  helperText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  categoryPickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    minHeight: 44,
+  },
+  categoryPickerText: {
+    fontSize: 14,
+    color: '#333333',
+    flex: 1,
+    fontWeight: '500',
+  },
+  placeholderText: {
+    color: '#9CA3AF',
+    fontWeight: '400',
+  },
+  dropdownIcon: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  categoryPickerModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 34,
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  categoryPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  categoryPickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: 0.2,
+  },
+  categoryPickerClose: {
+    fontSize: 28,
+    color: '#9CA3AF',
+    fontWeight: '300',
+    lineHeight: 28,
+  },
+  categoryList: {
+    paddingHorizontal: 4,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  categoryItemSelected: {
+    backgroundColor: '#F0F9FF',
+  },
+  categoryItemText: {
+    fontSize: 15,
+    color: '#374151',
+    flex: 1,
+    fontWeight: '500',
+  },
+  categoryItemTextSelected: {
+    color: '#0EA5E9',
+    fontWeight: '600',
+  },
+  categoryItemCheck: {
+    fontSize: 20,
+    color: '#0EA5E9',
+    fontWeight: '700',
+  },
+  noCategoriesText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 32,
+    lineHeight: 20,
+  },
 });
 
 export default ShopProfileScreen;

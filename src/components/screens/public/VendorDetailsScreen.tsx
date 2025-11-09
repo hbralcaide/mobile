@@ -145,7 +145,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             // Fetch vendor profile now that we have a UUID vendor id
             const { data: vpData, error: vpError } = await supabase
                 .from('vendor_profiles')
-                .select('id, business_name, first_name, last_name, phone_number, stall_number, complete_address, profile_image_url, operating_hours')
+                .select('id, business_name, first_name, last_name, phone_number, stall_number, complete_address, profile_image_url, operating_hours, status')
                 .eq('id', resolvedVendorId)
                 .single();
 
@@ -182,6 +182,13 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
             };
 
             setVendor(vendorWithStall);
+
+            // Check if vendor is active, if not close the screen
+            if (vendorData?.status && vendorData.status !== 'Active') {
+                console.log('[VENDOR STATUS] Vendor is not active:', vendorData.status);
+                navigation.goBack();
+                return;
+            }
 
             if (vendorData?.profile_image_url) {
                 const cacheBuster = `?v=${Date.now()}`;
@@ -229,7 +236,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         } finally {
             setLoading(false);
         }
-    }, [vendorId, vendorProducts]);
+    }, [vendorId, vendorProducts, navigation]);
 
     // Supabase Realtime subscription and initial fetch
     useEffect(() => {
@@ -270,7 +277,17 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
                     table: 'vendor_profiles',
                     filter: `id=eq.${vendor.id}`,
                 },
-                (_payload) => {
+                (payload) => {
+                    console.log('[VENDOR PROFILE REALTIME] Change detected:', payload.eventType);
+                    
+                    // Check if vendor status changed to inactive
+                    const newStatus = (payload.new as any)?.status;
+                    if (newStatus && newStatus !== 'Active') {
+                        console.log('[VENDOR PROFILE REALTIME] Vendor became inactive, closing screen');
+                        navigation.goBack();
+                        return;
+                    }
+                    
                     // Re-fetch vendor details when profile row changes
                     fetchVendorDetails();
                 }
@@ -280,7 +297,7 @@ const VendorDetailsScreen: React.FC<Props> = ({ route, navigation }) => {
         return () => {
             profileChannel.unsubscribe();
         };
-    }, [vendor?.id, fetchVendorDetails]);
+    }, [vendor?.id, fetchVendorDetails, navigation]);
 
     // While the screen is focused, tick current time every 30 seconds so UI (open/closed) updates automatically
     const isFocused = useIsFocused();

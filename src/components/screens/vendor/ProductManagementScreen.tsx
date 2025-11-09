@@ -207,6 +207,12 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
       }
 
       setCurrentVendorProfile(vendorData);
+      
+      // If vendor has a default category, auto-select it
+      if (vendorData?.default_category_id && !form.category_id) {
+        setForm(prev => ({ ...prev, category_id: vendorData.default_category_id }));
+      }
+      
       return vendorData;
     } catch (err) {
       console.error('Error getting current vendor:', err);
@@ -343,21 +349,24 @@ const ProductManagementScreen: React.FC<Props> = ({ navigation: _navigation }) =
 
   useEffect(() => {
     if (currentVendorProfile && categories.length > 0 && !form.category_id) {
-      const autoCategoryId = getAutoCategoryId();
-      if (autoCategoryId) {
-        setForm(prev => ({ ...prev, category_id: autoCategoryId }));
+      // Use default_category_id from profile first, fallback to auto-detection
+      const categoryId = currentVendorProfile.default_category_id || getAutoCategoryId();
+      if (categoryId) {
+        setForm(prev => ({ ...prev, category_id: categoryId }));
       }
     }
   }, [currentVendorProfile, categories, form.category_id, getAutoCategoryId]);
 
   const openAddModal = () => {
     setEditProduct(null);
-    const autoCategoryId = getAutoCategoryId();
+    
+    // Use default_category_id from vendor profile if available
+    const defaultCategoryId = currentVendorProfile?.default_category_id || getAutoCategoryId();
 
     setForm({
       name: '',
       price: '',
-      category_id: autoCategoryId || '',
+      category_id: defaultCategoryId || '',
       uom: '',
       status: 'Available'
     });

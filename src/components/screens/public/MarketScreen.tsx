@@ -121,6 +121,7 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<string>('disconnected');
   
   // Product search and filter states
   const [searchMode, setSearchMode] = useState<'category' | 'product'>('category');
@@ -248,13 +249,58 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   };
 
   // Fetch vendors who sell products in a specific product category
-  const fetchVendorsByProductCategory = async (categoryId: string, categoryName: string) => {
+  const fetchVendorsByProductCategory = useCallback(async (categoryId: string, categoryName: string) => {
     setLoadingStalls(true);
     
     console.log('Fetching vendors for category:', categoryName, 'ID:', categoryId);
     
     try {
-      // Get vendors who have products in this category
+      // Special handling for Variety and Eatery - show ALL vendors in these sections
+      // regardless of whether they have products
+      const isVarietyOrEatery = categoryName.toLowerCase().includes('variety') || 
+                                 categoryName.toLowerCase().includes('eatery');
+      
+      if (isVarietyOrEatery) {
+        console.log('Special handling for Variety/Eatery - showing all vendors');
+        
+        // Get market_section_id for this category
+        const { data: categoryData, error: catError } = await supabase
+          .from('product_categories')
+          .select('market_section_id, market_sections(name)')
+          .eq('id', categoryId)
+          .single();
+        
+        if (catError) throw catError;
+        
+        // Fetch all vendors in this market section
+        const { data: vendorData, error: vendorError } = await supabase
+          .from('vendor_profiles')
+          .select(`
+            id,
+            business_name,
+            first_name,
+            last_name,
+            stall_number,
+            phone_number,
+            category,
+            operating_hours,
+            profile_image_url,
+            market_section_id,
+            status
+          `)
+          .eq('market_section_id', categoryData.market_section_id)
+          .eq('status', 'Active')
+          .order('stall_number');
+        
+        if (vendorError) throw vendorError;
+        
+        console.log('Variety/Eatery vendors fetched:', vendorData?.length || 0);
+        setStallsInCategory(vendorData || []);
+        setLoadingStalls(false);
+        return;
+      }
+      
+      // Normal flow: Get vendors who have products in this category
       const { data: vpData, error: vpError } = await supabase
         .from('vendor_products')
         .select(`
@@ -268,14 +314,16 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
             phone_number,
             category,
             operating_hours,
-            profile_image_url
+            profile_image_url,
+            status
           ),
           products!inner(
             id,
             category_id
           )
         `)
-        .eq('products.category_id', categoryId);
+        .eq('products.category_id', categoryId)
+        .eq('vendor_profiles.status', 'Active');
 
       if (vpError) throw vpError;
 
@@ -304,7 +352,7 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
     } finally {
       setLoadingStalls(false);
     }
-  };
+  }, []);
 
   // Fetch all main categories from product_categories
   const fetchMainCategories = async () => {
@@ -338,6 +386,130 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
   useEffect(() => {
     fetchMainCategories();
   }, []);
+
+  // Realtime subscription for product_categories changes
+  useEffect(() => {
+    console.log('[CATEGORY REALTIME] Setting up subscription for category buttons...');
+
+    const categoryChannel = supabase
+      .channel('category-buttons-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'product_categories',
+        },
+        (payload) => {
+          console.log('[CATEGORY REALTIME] product_categories change detected:', payload.eventType);
+          // Refresh categories whenever a category is added, updated, or deleted
+          fetchMainCategories();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[CATEGORY REALTIME] Subscription status:', status);
+      });
+
+    return () => {
+      console.log('[CATEGORY REALTIME] Unsubscribing from category changes');
+      categoryChannel.unsubscribe();
+    };
+  }, []);
+
+  // Supabase Realtime subscription for vendor_products and products changes
+  useEffect(() => {
+    // Only subscribe if a category is selected
+    if (!selectedCategoryId || !selectedCategory) {
+      setRealtimeStatus('no-category');
+      return;
+    }
+
+    console.log('[REALTIME] Setting up subscription for category:', selectedCategory, selectedCategoryId);
+    setRealtimeStatus('connecting');
+
+    // Subscribe to vendor_products, products, AND vendor_profiles changes
+    // This ensures we catch all changes that might affect this category
+    const channel = supabase
+      .channel(`market-realtime-${selectedCategoryId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vendor_products',
+        },
+        async (payload) => {
+          console.log('[REALTIME] vendor_products change detected:', payload.eventType);
+          
+          // Get the product to check if it belongs to our category
+          const productId = (payload.new as any)?.product_id || (payload.old as any)?.product_id;
+          if (productId) {
+            const { data: product } = await supabase
+              .from('products')
+              .select('category_id')
+              .eq('id', productId)
+              .single();
+            
+            // Only refresh if this product belongs to the selected category
+            if (product && product.category_id === selectedCategoryId) {
+              console.log('[REALTIME] Change affects current category, refreshing...');
+              setRealtimeStatus('active');
+              fetchVendorsByProductCategory(selectedCategoryId, selectedCategory);
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'products',
+        },
+        async (payload) => {
+          console.log('[REALTIME] products change detected:', payload.eventType);
+          
+          // Check if this product belongs to our category
+          const categoryId = (payload.new as any)?.category_id || (payload.old as any)?.category_id;
+          if (categoryId === selectedCategoryId) {
+            console.log('[REALTIME] Product change affects current category, refreshing...');
+            setRealtimeStatus('active');
+            fetchVendorsByProductCategory(selectedCategoryId, selectedCategory);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vendor_profiles',
+        },
+        (payload) => {
+          console.log('[REALTIME] vendor_profiles change detected:', payload.eventType);
+          // Refresh vendor list when any vendor is added, updated, or deleted
+          console.log('[REALTIME] Vendor profile changed, refreshing vendor list...');
+          setRealtimeStatus('active');
+          fetchVendorsByProductCategory(selectedCategoryId, selectedCategory);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[REALTIME] Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('subscribed');
+        } else if (status === 'CLOSED') {
+          setRealtimeStatus('closed');
+        } else if (status === 'CHANNEL_ERROR') {
+          setRealtimeStatus('error');
+        }
+      });
+
+    return () => {
+      console.log('[REALTIME] Unsubscribing from channel');
+      channel.unsubscribe();
+      setRealtimeStatus('disconnected');
+    };
+  }, [selectedCategoryId, selectedCategory, fetchVendorsByProductCategory]);
 
   const fetchStallsByCategory = async (category: string, subcategoryName?: string | null) => {
     setLoadingStalls(true);
@@ -484,7 +656,8 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
             phone_number,
             category,
             operating_hours,
-            profile_image_url
+            profile_image_url,
+            status
           ),
           products!inner(
             id,
@@ -494,7 +667,8 @@ const CustomerHome: React.FC<CustomerHomeProps> = ({ navigation, route }) => {
           )
         `)
         .ilike('products.name', searchTerm)
-        .eq('status', 'available');
+        .eq('status', 'available')
+        .eq('vendor_profiles.status', 'Active');
 
       // If a category is selected, filter by that category
       if (selectedCategoryId) {

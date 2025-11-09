@@ -5,6 +5,7 @@ import { MapView as MappedInMapView, useMap, Marker, Path } from '@mappedin/reac
 import Geolocation from '@react-native-community/geolocation';
 import { supabase } from '../../services/supabase';
 import LocationPermissionModal from '../modals/LocationPermissionModal';
+import { MAPPEDIN_CLIENT_ID, MAPPEDIN_CLIENT_SECRET, MAPPEDIN_MAP_ID } from '../../config/env';
 
 interface MapViewComponentProps {
   onLocationSelect?: (locationId: string, locationName: string, locationData?: any) => void;
@@ -442,8 +443,9 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             try {
               const { data, error } = await supabase
                 .from('vendor_profiles')
-                .select('id')
+                .select('id, status')
                 .eq('stall_number', clickedStall.name)
+                .eq('status', 'Active')
                 .single();
               
               console.log('📦 Vendor data:', data);
@@ -453,8 +455,8 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
                 console.log('✅ Navigating to vendor details:', data.id);
                 onVendorClick(data.id);
               } else {
-                console.log('⚠️ No vendor found for stall:', clickedStall.name);
-                onVendorClick(clickedStall.name);
+                console.log('⚠️ No active vendor found for stall:', clickedStall.name);
+                // Don't navigate if vendor is not active
               }
             } catch (err) {
               console.error('💥 Error fetching vendor:', err);
@@ -559,7 +561,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
 
     const fetchAndPositionStalls = async () => {
       try {
-        // Fetch only stalls that have vendors with products
+        // Fetch all stalls with their vendor information including status
         const { data: stalls, error } = await supabase
           .from('stalls_mapped_view')
           .select(`
@@ -567,9 +569,11 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             stall_number, 
             poi_id, 
             poi_name,
-            vendor_profiles!inner(
+            vendor_profiles(
               id,
-              vendor_products!inner(id)
+              status,
+              market_section_id,
+              vendor_products(id)
             )
           `)
           .order('stall_number');
@@ -577,12 +581,49 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         if (error) throw error;
         if (!stalls) return;
 
-        console.log('Loaded', stalls.length, 'stalls with vendors who have products');
+        console.log('📊 ============================================');
+        console.log('📊 SUPABASE DATA FETCH RESULTS');
+        console.log('📊 ============================================');
+        console.log('✅ Loaded', stalls.length, 'stalls from database');
+        
+        // Get Variety and Eatery market section IDs
+        const { data: sections } = await supabase
+          .from('market_sections')
+          .select('id, name')
+          .in('name', ['Variety', 'Eatery']);
+        
+        const varietyEaterySectionIds = sections?.map(s => s.id) || [];
+        console.log('[MAP INITIAL] Variety/Eatery section IDs:', varietyEaterySectionIds);
+        
         const spaces = mapData.getByType('space');
-        console.log('Map has', spaces.length, 'spaces');
+        console.log('✅ Map has', spaces.length, 'spaces from Mappedin');
+        
+        // Enhanced logging: First stall
+        if (stalls.length > 0) {
+          console.log('📦 First stall from DB:', JSON.stringify({
+            stall_number: stalls[0].stall_number,
+            poi_id: stalls[0].poi_id,
+            poi_name: stalls[0].poi_name,
+            stall_id: stalls[0].stall_id,
+          }, null, 2));
+        }
+        
+        // Enhanced logging: First space
+        if (spaces.length > 0) {
+          console.log('🗺️  First space from Mappedin:', JSON.stringify({
+            id: spaces[0].id,
+            name: spaces[0].name,
+            externalId: spaces[0].externalId,
+          }, null, 2));
+        }
+        
+        console.log('🚨🚨🚨 MAPPEDIN SPACE ID FINDER 🚨🚨🚨');
+        console.log('========================================');
         
         // Log first few spaces to understand their structure
         if (spaces.length > 0) {
+          console.log('🔍 MAPPEDIN SPACE DETAILS:');
+          console.log('─────────────────────────────────────');
           console.log('First space:', JSON.stringify({
             id: spaces[0].id,
             name: spaces[0].name,
@@ -593,6 +634,14 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             name: spaces[1]?.name,
             externalId: spaces[1]?.externalId,
           }));
+          console.log('─────────────────────────────────────');
+          console.log('📊 Total spaces from Mappedin:', spaces.length);
+          
+          // Show first 10 spaces with their IDs
+          console.log('📋 First 10 spaces:');
+          spaces.slice(0, 10).forEach((space: any, index: number) => {
+            console.log(`  ${index + 1}. Name: "${space.name}" | ID: "${space.id}" | ExternalID: ${space.externalId || 'null'}`);
+          });
         }
         
         // Log first few stalls
@@ -606,6 +655,8 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
 
         // Match stalls to map spaces and create labels
         const labels: StallLabel[] = [];
+        const unmatchedStalls: any[] = [];
+        const inactiveStallIds: string[] = [];
         
         for (const stall of stalls) {
           // Match by space name = stall number (e.g., "M-40" === "M-40")
@@ -624,12 +675,60 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             // Extract prefix from stall number (e.g., "F-1" -> "F-", "DF-1" -> "DF-")
             const prefix = stall.stall_number.match(/^[A-Z]+-/)?.[0] || '';
             
-            labels.push({
-              id: stall.stall_id,
-              name: stall.stall_number,
-              poi_id: space.id, // Use the space ID instead of poi_id
-              prefix: prefix,
+            const vendorProfiles = Array.isArray(stall.vendor_profiles) 
+              ? stall.vendor_profiles 
+              : (stall.vendor_profiles ? [stall.vendor_profiles] : []);
+            
+            // Check if vendor exists and is Active
+            if (vendorProfiles.length > 0) {
+              const vendorProfile = vendorProfiles[0];
+              const isActive = vendorProfile?.status === 'Active';
+              const hasProducts = vendorProfile?.vendor_products && vendorProfile.vendor_products.length > 0;
+              const isVarietyOrEatery = varietyEaterySectionIds.includes(vendorProfile?.market_section_id);
+              
+              // Show vendor if:
+              // 1. Active AND has products, OR
+              // 2. Active AND is Variety/Eatery (even without products)
+              if (isActive && (hasProducts || isVarietyOrEatery)) {
+                labels.push({
+                  id: stall.stall_id,
+                  name: stall.stall_number,
+                  poi_id: space.id, // Mappedin SDK space ID
+                  prefix: prefix,
+                });
+                console.log('[MAP INITIAL] ✅ Added stall:', stall.stall_number, 'prefix:', prefix, 'hasProducts:', hasProducts, 'isVarietyOrEatery:', isVarietyOrEatery);
+              } else if (!isActive) {
+                // Track inactive vendor stalls
+                inactiveStallIds.push(space.id);
+                console.log('[MAP INITIAL] ⭕ Inactive stall:', stall.stall_number);
+              } else {
+                console.log('[MAP INITIAL] ❌ Skipped stall:', stall.stall_number, 'isActive:', isActive, 'hasProducts:', hasProducts, 'isVarietyOrEatery:', isVarietyOrEatery);
+              }
+            }
+          } else {
+            // Track unmatched stalls for debugging
+            unmatchedStalls.push({
+              stall_number: stall.stall_number,
+              poi_name: stall.poi_name,
+              poi_id: stall.poi_id,
             });
+          }
+        }
+
+        // Log matching results
+        console.log('🎯 ============================================');
+        console.log('🎯 STALL MATCHING RESULTS');
+        console.log('🎯 ============================================');
+        console.log(`✅ Successfully matched: ${labels.length}/${stalls.length} stalls`);
+        console.log(`❌ Unmatched stalls: ${unmatchedStalls.length}`);
+        
+        if (unmatchedStalls.length > 0) {
+          console.warn('⚠️  UNMATCHED STALLS (need to fix in Mappedin CMS or DB):');
+          unmatchedStalls.slice(0, 10).forEach((stall, index) => {
+            console.warn(`  ${index + 1}. Stall: "${stall.stall_number}" | POI Name: "${stall.poi_name}" | POI ID: "${stall.poi_id}"`);
+          });
+          if (unmatchedStalls.length > 10) {
+            console.warn(`  ... and ${unmatchedStalls.length - 10} more unmatched stalls`);
           }
         }
 
@@ -657,11 +756,46 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
           
           console.log('🎨 Applying color coding to stalls...');
           
-          // Apply colors to all stalls based on their prefix
+          // First, identify all stall spaces (those matching stall number patterns)
+          const allSpaces = mapData.getByType('space');
+          const stallSpaces = allSpaces.filter((space: any) => {
+            // Only reset spaces that match stall number patterns (e.g., "F-01", "FV-12", etc.)
+            return space.name && /^[A-Z]+-\d+$/.test(space.name);
+          });
+          
+          // Reset only stall spaces to default gray (not the entire floor)
+          stallSpaces.forEach((space: any) => {
+            try {
+              mapView.updateState(space, {
+                color: '#CCCCCC', // Default gray for stalls without vendors
+                interactive: true,
+              });
+            } catch (err) {
+              // Ignore errors for spaces that can't be updated
+            }
+          });
+          
+          // Color inactive vendor stalls (gray and non-interactive)
+          inactiveStallIds.forEach((spaceId) => {
+            const space = mapData.getByType('space').find((s: any) => s.id === spaceId);
+            if (space) {
+              try {
+                mapView.updateState(space, {
+                  color: '#CCCCCC', // Gray for inactive
+                  interactive: false, // Not clickable
+                });
+              } catch (err) {
+                console.log('Error updating inactive space:', err);
+              }
+            }
+          });
+          
+          // Then apply colors to stalls with active vendors based on their prefix
           labels.forEach((label) => {
             const space = mapData.getByType('space').find((s: any) => s.id === label.poi_id);
             if (space && label.prefix) {
               const color = sectionColors[label.prefix];
+              console.log('[MAP INITIAL COLOR] Stall:', label.name, 'Prefix:', label.prefix, 'Color:', color);
               if (color) {
                 try {
                   mapView.updateState(space, {
@@ -676,7 +810,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             }
           });
           
-          console.log('✅ Color coding applied to', labels.length, 'stalls');
+          console.log('✅ Reset all spaces and colored', labels.length, 'active vendor stalls');
         }
         
         // Set initial camera position to show the market with better zoom and angle
@@ -712,6 +846,226 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
 
     fetchAndPositionStalls();
   }, [mapData, mapView, focusStall]);
+
+  // Realtime subscription for vendor changes
+  React.useEffect(() => {
+    if (!mapData) return;
+
+    console.log('[MAP REALTIME] Setting up subscription for vendor changes...');
+
+    // Subscribe to vendor_profiles, vendor_products, and products changes
+    const channel = supabase
+      .channel('map-vendor-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vendor_profiles',
+        },
+        (payload) => {
+          console.log('[MAP REALTIME] vendor_profiles change detected:', payload.eventType);
+          // Re-fetch stalls to update vendor markers
+          fetchAndPositionStalls();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vendor_products',
+        },
+        (payload) => {
+          console.log('[MAP REALTIME] vendor_products change detected:', payload.eventType);
+          // Re-fetch stalls when products added/removed
+          fetchAndPositionStalls();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'products',
+        },
+        (payload) => {
+          console.log('[MAP REALTIME] products change detected:', payload.eventType);
+          // Re-fetch stalls when products added/removed
+          fetchAndPositionStalls();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[MAP REALTIME] Subscription status:', status);
+      });
+
+    // Define fetchAndPositionStalls inside this effect to avoid dependency issues
+    const fetchAndPositionStalls = async () => {
+      try {
+        // Fetch all stalls with their vendor information including status
+        const { data: stalls, error } = await supabase
+          .from('stalls_mapped_view')
+          .select(`
+            stall_id, 
+            stall_number, 
+            poi_id, 
+            poi_name,
+            vendor_profiles(
+              id,
+              status,
+              market_section_id,
+              vendor_products(id)
+            )
+          `)
+          .order('stall_number');
+        
+        if (error) throw error;
+        if (!stalls) return;
+
+        console.log('[MAP REALTIME] Refreshed stalls:', stalls.length);
+        
+        // Match stalls to map spaces and create labels
+        const activeLabels: StallLabel[] = [];
+        const inactiveStallIds: string[] = [];
+        
+        // Get Variety and Eatery market section IDs
+        const { data: sections } = await supabase
+          .from('market_sections')
+          .select('id, name')
+          .in('name', ['Variety', 'Eatery']);
+        
+        const varietyEaterySectionIds = sections?.map(s => s.id) || [];
+        console.log('[MAP] Variety/Eatery section IDs:', varietyEaterySectionIds);
+        
+        for (const stall of stalls) {
+          // Match by space name = stall number
+          let space = mapData.getByType('space').find((s: any) => 
+            s.name === stall.stall_number
+          );
+          
+          // Fallback: try matching by poi_name
+          if (!space) {
+            space = mapData.getByType('space').find((s: any) => 
+              s.name === stall.poi_name
+            );
+          }
+
+          if (space) {
+            const prefix = stall.stall_number.match(/^[A-Z]+-/)?.[0] || '';
+            const vendorProfiles = Array.isArray(stall.vendor_profiles) 
+              ? stall.vendor_profiles 
+              : (stall.vendor_profiles ? [stall.vendor_profiles] : []);
+            
+            // Check if vendor exists and is Active
+            if (vendorProfiles.length > 0) {
+              const vendorProfile = vendorProfiles[0];
+              const isActive = vendorProfile?.status === 'Active';
+              const hasProducts = vendorProfile?.vendor_products && vendorProfile.vendor_products.length > 0;
+              const isVarietyOrEatery = varietyEaterySectionIds.includes(vendorProfile?.market_section_id);
+              
+              // Show vendor if:
+              // 1. Active AND has products, OR
+              // 2. Active AND is Variety/Eatery (even without products)
+              if (isActive && (hasProducts || isVarietyOrEatery)) {
+                activeLabels.push({
+                  id: stall.stall_id,
+                  name: stall.stall_number,
+                  poi_id: space.id,
+                  prefix: prefix,
+                });
+                console.log('[MAP] ✅ Added stall:', stall.stall_number, 'prefix:', prefix, 'hasProducts:', hasProducts, 'isVarietyOrEatery:', isVarietyOrEatery);
+              } else if (!isActive) {
+                // Track inactive vendor stalls
+                inactiveStallIds.push(space.id);
+                console.log('[MAP] ⭕ Inactive stall:', stall.stall_number);
+              } else {
+                console.log('[MAP] ❌ Skipped stall:', stall.stall_number, 'isActive:', isActive, 'hasProducts:', hasProducts, 'isVarietyOrEatery:', isVarietyOrEatery);
+              }
+            }
+          }
+        }
+
+        console.log('[MAP REALTIME] Active stalls:', activeLabels.length, 'Inactive stalls:', inactiveStallIds.length);
+        setStallLabels(activeLabels);
+        
+        // Reapply color coding
+        if (mapView) {
+          // First, identify all stall spaces (those matching stall number patterns)
+          const allSpaces = mapData.getByType('space');
+          const stallSpaces = allSpaces.filter((space: any) => {
+            // Only reset spaces that match stall number patterns (e.g., "F-01", "FV-12", etc.)
+            return space.name && /^[A-Z]+-\d+$/.test(space.name);
+          });
+          
+          // Reset only stall spaces to default gray (not the entire floor)
+          stallSpaces.forEach((space: any) => {
+            try {
+              mapView.updateState(space, {
+                color: '#CCCCCC', // Default gray for spaces without vendors
+                interactive: true,
+              });
+            } catch (err) {
+              // Ignore errors for spaces that can't be updated
+            }
+          });
+          
+          // Color inactive vendor stalls (gray and non-interactive)
+          inactiveStallIds.forEach((spaceId) => {
+            const space = mapData.getByType('space').find((s: any) => s.id === spaceId);
+            if (space) {
+              try {
+                mapView.updateState(space, {
+                  color: '#CCCCCC', // Gray for inactive
+                  interactive: false, // Not clickable
+                });
+              } catch (err) {
+                console.log('Error updating inactive space:', err);
+              }
+            }
+          });
+          
+          // Then, color only the stalls with active vendors
+          const sectionColors: { [key: string]: string } = {
+            'E-': '#FF6B6B',
+            'FV-': '#4CAF50',
+            'DF-': '#FF9800',
+            'G-': '#2196F3',
+            'RG-': '#FFC107',
+            'V-': '#9C27B0',
+            'F-': '#00BCD4',
+            'M-': '#F44336',
+          };
+          
+          activeLabels.forEach((label) => {
+            const space = mapData.getByType('space').find((s: any) => s.id === label.poi_id);
+            if (space && label.prefix) {
+              const color = sectionColors[label.prefix];
+              console.log('[MAP COLOR] Stall:', label.name, 'Prefix:', label.prefix, 'Color:', color);
+              if (color) {
+                try {
+                  mapView.updateState(space, {
+                    color: color,
+                    interactive: true,
+                  });
+                } catch (err) {
+                  console.log('Error updating space color:', err);
+                }
+              }
+            }
+          });
+          
+          console.log('[MAP REALTIME] Reset all spaces and recolored', activeLabels.length, 'active vendor stalls');
+        }
+      } catch (error) {
+        console.error('[MAP REALTIME] Error refreshing stalls:', error);
+      }
+    };
+
+    return () => {
+      console.log('[MAP REALTIME] Unsubscribing from vendor changes');
+      channel.unsubscribe();
+    };
+  }, [mapData, mapView]);
 
   // Convert user GPS location to map coordinate for blue dot display
   React.useEffect(() => {
@@ -935,20 +1289,26 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
             
             // Fallback: If no user location, pick best door/entrance by route distance
             if (!startingPoint) {
+              console.log('🚪 Calling getBestFallbackStart for stall:', focusStall);
               const fallback = await getBestFallbackStart(targetSpace);
+              console.log('🚪 getBestFallbackStart returned:', fallback ? 'door found' : 'no door found');
               if (!fallback) {
-                console.log('No suitable starting point found - cannot show path');
+                console.log('❌ No suitable starting point found - cannot show path');
                 setPathCoordinates(null);
                 return;
               }
               startingPoint = fallback;
+              console.log('✅ Using door as starting point');
             }
 
             if (startingPoint) {
+              console.log('📍 Getting directions from starting point to', focusStall);
               // Get directions from starting point to target stall
               const directions = await mapView.getDirections(startingPoint, targetSpace);
+              console.log('🗺️ getDirections returned:', directions ? `path with ${directions.coordinates?.length || 0} coordinates` : 'null');
               
               if (directions && directions.coordinates && directions.coordinates.length > 0) {
+                console.log('✅ Path found! Setting path coordinates');
                 // Store the path coordinates for rendering
                 setPathCoordinates(directions.coordinates);
                 
@@ -959,26 +1319,32 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
                   try { mapView.Camera.focusOn(targetSpace); } catch {}
                 }
               } else {
+                console.log('⚠️ No path returned from getDirections');
                 // If GPS coordinate failed to route, fall back to best door/entrance coordinate
                 const isGPSCoordinate = (startingPoint as any).__type === 'coordinate';
                 if (isGPSCoordinate) {
+                  console.log('🔄 Trying fallback to door (was GPS coordinate)');
                   const fallbackStart = await getBestFallbackStart(targetSpace);
                   if (fallbackStart) {
                     const doorDirections = await mapView.getDirections(fallbackStart, targetSpace);
                     if (doorDirections && doorDirections.coordinates && doorDirections.coordinates.length > 0) {
+                      console.log('✅ Fallback door path found!');
                       setPathCoordinates(doorDirections.coordinates);
                     } else {
+                      console.log('❌ Fallback door path also failed');
                       setPathCoordinates(null);
                     }
                   } else {
+                    console.log('❌ No fallback door found');
                     setPathCoordinates(null);
                   }
                 } else {
+                  console.log('❌ Starting point was not GPS, setting path to null');
                   setPathCoordinates(null);
                 }
               }
             } else {
-              console.log('No doors found - cannot show path');
+              console.log('❌ No doors found - cannot show path');
               setPathCoordinates(null);
             }
           } catch (error) {
@@ -1244,10 +1610,16 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
 
   // Memoize credentials to prevent re-creation on every render
   const credentials = useMemo(() => ({
-    key: 'mik_M8uMQcxJZDWRbwmrR542e07af',
-    secret: 'mis_4sDELo8xqkrXxLMPEUXzDQsf71J3bvI1UhbUVcWm3WW8dfa102e',
-    mapId: '68ee9141b47af0000bc138c1',
+    key: MAPPEDIN_CLIENT_ID,
+    secret: MAPPEDIN_CLIENT_SECRET,
+    mapId: MAPPEDIN_MAP_ID,
   }), []);
+
+  console.log('🔑 Mappedin credentials loaded:', {
+    hasKey: !!credentials.key,
+    hasSecret: !!credentials.secret,
+    mapId: credentials.mapId,
+  });
 
   // Map options - Modern gradient design with outdoor navigation
   const mapOptions = useMemo(() => ({

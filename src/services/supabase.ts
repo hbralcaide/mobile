@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-url-polyfill/auto';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/env';
 
-const supabaseUrl = 'https://udxoepcssfhljwqbvhbd.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkeG9lcGNzc2ZobGp3cWJ2aGJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3NzQyNTksImV4cCI6MjA2OTM1MDI1OX0.CCpVQSyzuDs6sIEEZ42phS7ISKiM-rFfojv1YECpgM0';
+const supabaseUrl = SUPABASE_URL;
+const supabaseAnonKey = SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -18,6 +19,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'x-client-info': 'mapalengke-mobile@1.0.0',
+    },
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
     },
   },
 });
