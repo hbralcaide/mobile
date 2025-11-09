@@ -38,6 +38,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
   const [categoryVendors, setCategoryVendors] = useState<Array<{ stallNumber: string; vendorName: string; poi_id: string }>>([]);
   const [userMapCoordinate, setUserMapCoordinate] = useState<any>(null);
   const hasInitiallyFocusedRef = useRef(false); // Track if we've focused on user location initially
+  const [stallsLoaded, setStallsLoaded] = useState(false); // Track if stalls are loaded
   // Entrance selector and manual position feature removed
 
   // Debug modal state removed - now using navigation instead
@@ -748,6 +749,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         console.log('First label object:', JSON.stringify(labels[0]));
         
         setStallLabels(labels);
+        setStallsLoaded(true); // Mark stalls as loaded
         
         // Apply color coding to stalls - NOW ASYNC AND NON-BLOCKING
         if (mapView) {
@@ -1636,6 +1638,7 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadStartTimeRef = useRef<number>(Date.now());
+  const [mapReady, setMapReady] = useState(false);
 
   // Memoize credentials to prevent re-creation on every render
   const credentials = useMemo(() => ({
@@ -1670,6 +1673,7 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
   const handleMapReady = useCallback(() => {
     const loadTime = Date.now() - loadStartTimeRef.current;
     console.log(`🚀 Map loaded in ${loadTime}ms (${(loadTime / 1000).toFixed(2)}s)`);
+    setMapReady(true);
     setLoading(false);
   }, []);
 
@@ -1693,7 +1697,9 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading map...</Text>
-          <Text style={styles.loadingSubtext}>This may take a few seconds</Text>
+          <Text style={styles.loadingSubtext}>
+            {mapReady ? 'Preparing stalls...' : 'Initializing map...'}
+          </Text>
         </View>
       )}
       
