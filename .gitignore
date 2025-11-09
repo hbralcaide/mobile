@@ -81,3 +81,23 @@ yarn-error.log
 
 # Environment configuration with credentials (DO NOT COMMIT)
 src/config/env.ts
+
+# Android build artifacts
+android/app/src/main/res/drawable-*/
+android/app/src/main/res/raw/
+android/app/src/main/assets/
+android/app/build/
+
+# Thesis documentation (local only)
+*THESIS*.md
+*APPENDIX*.md
+*IMPLEMENTATION*.md
+*PRACTICAL*.md
+*TECHNICAL*.md
+*OBJECTIVES*.md
+*CHECK*.md
+*AUDIT*.md
+*ERROR*.md
+*FEATURE*.md
+*QUICK*.md
+*.sql
