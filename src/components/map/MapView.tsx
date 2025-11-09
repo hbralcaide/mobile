@@ -561,36 +561,46 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
 
     const fetchAndPositionStalls = async () => {
       try {
-        // Fetch all stalls with their vendor information including status
-        const { data: stalls, error } = await supabase
-          .from('stalls_mapped_view')
-          .select(`
-            stall_id, 
-            stall_number, 
-            poi_id, 
-            poi_name,
-            vendor_profiles(
-              id,
-              status,
-              market_section_id,
-              vendor_products(id)
-            )
-          `)
-          .order('stall_number');
+        // Start time measurement
+        const startTime = Date.now();
+        console.log('⏱️ Starting stall data fetch...');
         
-        if (error) throw error;
+        // Fetch all required data in parallel for faster loading
+        const [stallsResult, sectionsResult] = await Promise.all([
+          supabase
+            .from('stalls_mapped_view')
+            .select(`
+              stall_id, 
+              stall_number, 
+              poi_id, 
+              poi_name,
+              vendor_profiles(
+                id,
+                status,
+                market_section_id,
+                vendor_products(id)
+              )
+            `)
+            .order('stall_number'),
+          supabase
+            .from('market_sections')
+            .select('id, name')
+            .in('name', ['Variety', 'Eatery'])
+        ]);
+        
+        const fetchTime = Date.now() - startTime;
+        console.log(`✅ Data fetched in ${fetchTime}ms`);
+        
+        const stalls = stallsResult.data;
+        const sections = sectionsResult.data;
+        
+        if (stallsResult.error) throw stallsResult.error;
         if (!stalls) return;
 
         console.log('📊 ============================================');
         console.log('📊 SUPABASE DATA FETCH RESULTS');
         console.log('📊 ============================================');
         console.log('✅ Loaded', stalls.length, 'stalls from database');
-        
-        // Get Variety and Eatery market section IDs
-        const { data: sections } = await supabase
-          .from('market_sections')
-          .select('id, name')
-          .in('name', ['Variety', 'Eatery']);
         
         const varietyEaterySectionIds = sections?.map(s => s.id) || [];
         console.log('[MAP INITIAL] Variety/Eatery section IDs:', varietyEaterySectionIds);
@@ -658,17 +668,16 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         const unmatchedStalls: any[] = [];
         const inactiveStallIds: string[] = [];
         
+        // Create a Map for O(1) lookup instead of find() calls
+        const spacesByName = new Map(spaces.map((s: any) => [s.name, s]));
+        
         for (const stall of stalls) {
           // Match by space name = stall number (e.g., "M-40" === "M-40")
-          let space = mapData.getByType('space').find((s: any) => 
-            s.name === stall.stall_number
-          );
+          let space = spacesByName.get(stall.stall_number);
           
           // Fallback: try matching by poi_name
           if (!space) {
-            space = mapData.getByType('space').find((s: any) => 
-              s.name === stall.poi_name
-            );
+            space = spacesByName.get(stall.poi_name);
           }
 
           if (space) {
@@ -740,100 +749,119 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
         
         setStallLabels(labels);
         
-        // Apply color coding to stalls based on their category
+        // Apply color coding to stalls - NOW ASYNC AND NON-BLOCKING
         if (mapView) {
-          // Define color scheme for each section
-          const sectionColors: { [key: string]: string } = {
-            'E-': '#FF6B6B',      // Eatery - Red
-            'FV-': '#4CAF50',     // Fruits & Vegetables - Green
-            'DF-': '#FF9800',     // Dried Fish - Orange
-            'G-': '#2196F3',      // Grocery - Blue
-            'RG-': '#FFC107',     // Rice & Grains - Amber
-            'V-': '#9C27B0',      // Variety - Purple
-            'F-': '#00BCD4',      // Fish - Cyan
-            'M-': '#F44336',      // Meat - Deep Red
-          };
-          
-          console.log('🎨 Applying color coding to stalls...');
-          
-          // First, identify all stall spaces (those matching stall number patterns)
-          const allSpaces = mapData.getByType('space');
-          const stallSpaces = allSpaces.filter((space: any) => {
-            // Only reset spaces that match stall number patterns (e.g., "F-01", "FV-12", etc.)
-            return space.name && /^[A-Z]+-\d+$/.test(space.name);
-          });
-          
-          // Reset only stall spaces to default gray (not the entire floor)
-          stallSpaces.forEach((space: any) => {
-            try {
-              mapView.updateState(space, {
-                color: '#CCCCCC', // Default gray for stalls without vendors
-                interactive: true,
-              });
-            } catch (err) {
-              // Ignore errors for spaces that can't be updated
+          // Don't wait for coloring to complete - do it in background
+          (async () => {
+            const coloringStartTime = Date.now();
+            
+            // Define color scheme for each section
+            const sectionColors: { [key: string]: string } = {
+              'E-': '#FF6B6B',      // Eatery - Red
+              'FV-': '#4CAF50',     // Fruits & Vegetables - Green
+              'DF-': '#FF9800',     // Dried Fish - Orange
+              'G-': '#2196F3',      // Grocery - Blue
+              'RG-': '#FFC107',     // Rice & Grains - Amber
+              'V-': '#9C27B0',      // Variety - Purple
+              'F-': '#00BCD4',      // Fish - Cyan
+              'M-': '#F44336',      // Meat - Deep Red
+            };
+            
+            console.log('🎨 Applying color coding to stalls (background)...');
+            
+            // First, identify all stall spaces (those matching stall number patterns)
+            const allSpaces = mapData.getByType('space');
+            const stallSpaces = allSpaces.filter((space: any) => {
+              // Only reset spaces that match stall number patterns (e.g., "F-01", "FV-12", etc.)
+              return space.name && /^[A-Z]+-\d+$/.test(space.name);
+            });
+            
+            // Process in smaller chunks to avoid blocking
+            const CHUNK_SIZE = 20;
+            
+            // Reset stall spaces in chunks
+            for (let i = 0; i < stallSpaces.length; i += CHUNK_SIZE) {
+              const chunk = stallSpaces.slice(i, i + CHUNK_SIZE);
+              await Promise.all(
+                chunk.map(async (space: any) => {
+                  try {
+                    await mapView.updateState(space, {
+                      color: '#CCCCCC',
+                      interactive: true,
+                    });
+                  } catch (err) {
+                    // Ignore errors
+                  }
+                })
+              );
             }
-          });
-          
-          // Color inactive vendor stalls (gray and non-interactive)
-          inactiveStallIds.forEach((spaceId) => {
-            const space = mapData.getByType('space').find((s: any) => s.id === spaceId);
-            if (space) {
-              try {
-                mapView.updateState(space, {
-                  color: '#CCCCCC', // Gray for inactive
-                  interactive: false, // Not clickable
-                });
-              } catch (err) {
-                console.log('Error updating inactive space:', err);
-              }
+            
+            // Color inactive vendor stalls
+            for (let i = 0; i < inactiveStallIds.length; i += CHUNK_SIZE) {
+              const chunk = inactiveStallIds.slice(i, i + CHUNK_SIZE);
+              await Promise.all(
+                chunk.map(async (spaceId) => {
+                  const space = mapData.getByType('space').find((s: any) => s.id === spaceId);
+                  if (space) {
+                    try {
+                      await mapView.updateState(space, {
+                        color: '#CCCCCC',
+                        interactive: false,
+                      });
+                    } catch (err) {
+                      // Ignore
+                    }
+                  }
+                })
+              );
             }
-          });
-          
-          // Then apply colors to stalls with active vendors based on their prefix
-          labels.forEach((label) => {
-            const space = mapData.getByType('space').find((s: any) => s.id === label.poi_id);
-            if (space && label.prefix) {
-              const color = sectionColors[label.prefix];
-              console.log('[MAP INITIAL COLOR] Stall:', label.name, 'Prefix:', label.prefix, 'Color:', color);
-              if (color) {
-                try {
-                  mapView.updateState(space, {
-                    color: color,
-                    hoverColor: color, // Keep same color on hover
-                    interactive: true, // Make space clickable
-                  });
-                } catch (err) {
-                  // Ignore individual errors
-                }
-              }
+            
+            // Color active vendor stalls in chunks
+            for (let i = 0; i < labels.length; i += CHUNK_SIZE) {
+              const chunk = labels.slice(i, i + CHUNK_SIZE);
+              await Promise.all(
+                chunk.map(async (label) => {
+                  const space = mapData.getByType('space').find((s: any) => s.id === label.poi_id);
+                  if (space && label.prefix) {
+                    const color = sectionColors[label.prefix];
+                    if (color) {
+                      try {
+                        await mapView.updateState(space, {
+                          color: color,
+                          hoverColor: color,
+                          interactive: true,
+                        });
+                      } catch (err) {
+                        // Ignore
+                      }
+                    }
+                  }
+                })
+              );
             }
-          });
-          
-          console.log('✅ Reset all spaces and colored', labels.length, 'active vendor stalls');
+            
+            const coloringTime = Date.now() - coloringStartTime;
+            console.log(`✅ Colored all stalls in ${coloringTime}ms`);
+            console.log(`⏱️ Total loading time: ${Date.now() - startTime}ms`);
+          })();
         }
         
-        // Set initial camera position to show the market with better zoom and angle
+        // Set initial camera position - INSTANT (no animation)
         if (mapView && !focusStall) {
           try {
             const floors = mapData.getByType('floor');
             if (floors.length > 0) {
-              // First focus on the floor to get the position
-              mapView.Camera.focusOn(floors[0], { duration: 1000 });
+              // Set camera position instantly without animation
+              mapView.Camera.set({
+                bearing: 0,
+                pitch: 30, // Slight tilt for better depth perception
+                zoomLevel: 19.5, // Much closer zoom level
+              });
               
-              // Then adjust the camera for a better viewing angle
-              setTimeout(() => {
-                try {
-                  mapView.Camera.set({
-                    bearing: 0,
-                    pitch: 30, // Slight tilt for better depth perception
-                    zoomLevel: 19.5, // Much closer zoom level
-                  });
-                  console.log('Initial camera set with zoom and tilt');
-                } catch (err) {
-                  console.log('Error adjusting camera angle:', err);
-                }
-              }, 1200);
+              // Focus on floor with minimal animation
+              mapView.Camera.focusOn(floors[0], { duration: 100 }); // Very fast
+              
+              console.log('✅ Initial camera set instantly');
             }
           } catch (err) {
             console.log('Error setting initial camera:', err);
@@ -1607,6 +1635,7 @@ const MapContent: React.FC<{ selectedCategory?: string; onVendorClick?: (vendorI
 const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _onLocationSelect, selectedCategory: _selectedCategory, onStallClick: _onStallClick, onVendorClick, focusStall }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadStartTimeRef = useRef<number>(Date.now());
 
   // Memoize credentials to prevent re-creation on every render
   const credentials = useMemo(() => ({
@@ -1621,20 +1650,26 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
     mapId: credentials.mapId,
   });
 
-  // Map options - Modern gradient design with outdoor navigation
+  // Map options - Aggressively optimized for fastest possible loading
   const mapOptions = useMemo(() => ({
     backgroundColor: '#E8F5E9', // Light green/mint background
     outdoorView: {
       enabled: true, // Enable outdoor view for indoor-to-outdoor navigation
     },
     shadowColor: '#2E7D32', // Dark green shadows for depth
-    multiBufferRendering: false,
-    labelAllLocationsOnInit: false,
+    multiBufferRendering: true, // Enable for better performance
+    labelAllLocationsOnInit: false, // Don't load all labels at once
     xRayPath: false,
+    mode: 'default', // Use default mode for faster rendering
+    useWebGL: true, // Enable WebGL acceleration
+    enableTextureAtlas: true, // Optimize texture loading
+    lowMemoryMode: false, // Keep high performance
+    cacheTTL: 3600000, // Cache for 1 hour (in ms)
   }), []);
 
   const handleMapReady = useCallback(() => {
-    console.log('Map view ready');
+    const loadTime = Date.now() - loadStartTimeRef.current;
+    console.log(`🚀 Map loaded in ${loadTime}ms (${(loadTime / 1000).toFixed(2)}s)`);
     setLoading(false);
   }, []);
 
@@ -1656,8 +1691,9 @@ const MapViewComponent: React.FC<MapViewComponentProps> = ({ onLocationSelect: _
     <View style={styles.container}>
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading map...</Text>
+          <Text style={styles.loadingSubtext}>This may take a few seconds</Text>
         </View>
       )}
       
@@ -1703,6 +1739,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     color: '#666',
+  },
+  loadingSubtext: {
+    marginTop: 5,
+    fontSize: 12,
+    color: '#999',
   },
   errorText: {
     fontSize: 16,
